@@ -136,7 +136,7 @@ def downloadPage(pageid):
     print("Done!")
 
 def initiateDownload(url):
-    downloadPage(url.split("=")[-1])
+    downloadPage(url.split("m=")[-1].split("&")[0])
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
