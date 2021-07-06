@@ -113,6 +113,14 @@ def downloadModel(pageid,accessurl):
     downloadUUID(accessurl,modeldata["job"]["uuid"])
     downloadSweeps(accessurl, modeldata["sweeps"])
 
+# Patch showcase.js to fix expiration issue
+def patchShowcase():
+    with open("js/showcase.js","r",encoding="UTF-8") as f:
+        j = f.read()
+    with open("js/showcase.js","w",encoding="UTF-8") as f:
+        f.write(re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)","",j))
+
+
 def downloadPage(pageid):
     makeDirs(pageid)
     os.chdir(pageid)
@@ -127,6 +135,8 @@ def downloadPage(pageid):
         f.write(content)
     print("Downloading static assets...")
     downloadAssets(staticbase)
+    # Patch showcase.js to fix expiration issue
+    patchShowcase()
     print("Downloading model info...")
     downloadInfo(pageid)
     print("Downloading images...")
