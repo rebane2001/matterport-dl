@@ -127,7 +127,13 @@ def downloadPage(pageid):
     print("Downloading base page...")
     r = requests.get(f"https://my.matterport.com/show/?m={pageid}")
     staticbase = re.search(r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
-    accessurl = re.search(r'"(https://cdn-1.matterport.com/models/.*?/assets/~/{{filename}}\?t=.*?)"', r.text).group(1).replace("{{","{").replace("}}","}")
+    try:
+        accessurl = re.search(r'"(https://cdn-1.matterport.com/models/.*?/assets/~/{{filename}}\?t=.*?)"', r.text).group(1).replace("{{","{").replace("}}","}")
+    except AttributeError:
+        print("Failed to retrieve accessurl, trying alternative method...")
+        accesstry = re.search(r'"(https://cdn-1.matterport.com/models/.*?/assets/(.*?)\?t=.*?)"', r.text)
+        accessurl = accesstry.group(1).replace(accesstry.group(2),"~/{filename}")
+        print("Got accessurl with an alternative method!")
     # Automatic redirect if GET param isn't correct
     injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; }'
     content = r.text.replace(staticbase,".").replace("https://cdn-1.matterport.com","").replace("https://mp-app-prod.global.ssl.fastly.net","").replace("window.MP_PREFETCHED_MODELDATA",f"{injectedjs};window.MP_PREFETCHED_MODELDATA")
