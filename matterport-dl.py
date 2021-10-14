@@ -126,7 +126,7 @@ def downloadModel(pageid,accessurl):
     os.chdir(f"models/{accessid}")
     downloadUUID(accessurl,modeldata["job"]["uuid"])
     downloadSweeps(accessurl, modeldata["sweeps"])
-    os.chdir(pageid)
+    os.chdir("../../")
 
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
