@@ -76,10 +76,16 @@ def downloadFile(url, file):
         raise Exception
 
 def downloadAssets(base):
-    assets = ["css/showcase.css", "css/unsupported_browser.css", "js/browser-check.js", "js/showcase.js", "js/134.js", "js/164.js", "js/833.js", "fonts/ibm-plex-sans-100.woff2", "fonts/ibm-plex-sans-100.woff", "fonts/ibm-plex-sans-100italic.woff2", "fonts/ibm-plex-sans-100italic.woff", "fonts/ibm-plex-sans-200.woff2", "fonts/ibm-plex-sans-200.woff", "fonts/ibm-plex-sans-200italic.woff2", "fonts/ibm-plex-sans-200italic.woff", "fonts/ibm-plex-sans-300.woff2", "fonts/ibm-plex-sans-300.woff", "fonts/ibm-plex-sans-300italic.woff2", "fonts/ibm-plex-sans-300italic.woff", "fonts/ibm-plex-sans-regular.woff2", "fonts/ibm-plex-sans-regular.woff", "fonts/ibm-plex-sans-italic.woff2", "fonts/ibm-plex-sans-italic.woff", "fonts/ibm-plex-sans-500.woff2", "fonts/ibm-plex-sans-500.woff", "fonts/ibm-plex-sans-500italic.woff2", "fonts/ibm-plex-sans-500italic.woff", "fonts/ibm-plex-sans-600italic.woff2", "fonts/ibm-plex-sans-600italic.woff", "fonts/ibm-plex-sans-600.woff2", "fonts/ibm-plex-sans-600.woff", "fonts/ibm-plex-sans-700.woff2", "fonts/ibm-plex-sans-700.woff", "fonts/ibm-plex-sans-700italic.woff2", "fonts/ibm-plex-sans-700italic.woff", "fonts/roboto-100.woff2", "fonts/roboto-100.woff", "fonts/roboto-100italic.woff2", "fonts/roboto-100italic.woff", "fonts/roboto-300.woff2", "fonts/roboto-300.woff", "fonts/roboto-300italic.woff2", "fonts/roboto-300italic.woff", "fonts/roboto-regular.woff2", "fonts/roboto-regular.woff", "fonts/roboto-italic.woff2", "fonts/roboto-italic.woff", "fonts/roboto-500.woff2", "fonts/roboto-500.woff", "fonts/roboto-500italic.woff2", "fonts/roboto-500italic.woff", "fonts/roboto-700.woff2", "fonts/roboto-700.woff", "fonts/roboto-700italic.woff2", "fonts/roboto-700italic.woff", "fonts/roboto-900.woff2", "fonts/roboto-900.woff", "fonts/roboto-900italic.woff2", "fonts/roboto-900italic.woff", "fonts/mp-font.woff2", "fonts/mp-font.woff", "fonts/mp-font.svg", "cursors/zoom-in.png", "cursors/zoom-out.png", "cursors/grab.png", "cursors/grabbing.png", "images/chrome.png", "images/edge.png", "images/firefox.png", "images/safari.png", "images/showcase-password-background.jpg", "images/matterport-logo-light.svg", "images/puck_256_red.png", "images/escape.png", "images/headset-cardboard.png", "images/headset-quest.png", "images/Desktop-help-play-button.svg", "images/Desktop-help-spacebar.png", "images/mattertag-disc-128-free.v1.png", "images/mobile-help-play-button.svg", "images/nav_help_360.png", "images/nav_help_click_inside.png", "images/nav_help_gesture_drag.png", "images/nav_help_gesture_drag_two_finger.png", "images/nav_help_gesture_pinch.png", "images/nav_help_gesture_position.png", "images/nav_help_gesture_position_two_finger.png", "images/nav_help_gesture_tap.png", "images/nav_help_inside_key.png", "images/nav_help_keyboard_all.png", "images/nav_help_keyboard_left_right.png", "images/nav_help_keyboard_up_down.png", "images/nav_help_mouse_click.png", "images/nav_help_mouse_drag_left.png", "images/nav_help_mouse_drag_right.png", "images/nav_help_mouse_position_left.png", "images/nav_help_mouse_position_right.png", "images/nav_help_mouse_zoom.png", "images/nav_help_tap_inside.png", "images/nav_help_zoom_keys.png", "images/tagbg.png", "images/tagmask.png", "images/NoteColor.png", "images/NoteIcon.png", "images/pinAnchor.png", "images/360_placement_pin_mask.png", "images/exterior.png", "images/exterior_hover.png", "images/interior.png", "images/interior_hover.png", "images/tagbg.png", "images/tagmask.png", "images/roboto-700-42_0.png",  "images/scope.svg",  "images/vert_arrows.png", "images/surface_grid_planar_256.png", "locale/strings-en-US.json"]
+    js_files = ["showcase","browser-check","79","134","136","164","321","614","833"]
+    assets = ["css/showcase.css", "css/unsupported_browser.css", "fonts/ibm-plex-sans-100.woff2", "fonts/ibm-plex-sans-100.woff", "fonts/ibm-plex-sans-100italic.woff2", "fonts/ibm-plex-sans-100italic.woff", "fonts/ibm-plex-sans-200.woff2", "fonts/ibm-plex-sans-200.woff", "fonts/ibm-plex-sans-200italic.woff2", "fonts/ibm-plex-sans-200italic.woff", "fonts/ibm-plex-sans-300.woff2", "fonts/ibm-plex-sans-300.woff", "fonts/ibm-plex-sans-300italic.woff2", "fonts/ibm-plex-sans-300italic.woff", "fonts/ibm-plex-sans-regular.woff2", "fonts/ibm-plex-sans-regular.woff", "fonts/ibm-plex-sans-italic.woff2", "fonts/ibm-plex-sans-italic.woff", "fonts/ibm-plex-sans-500.woff2", "fonts/ibm-plex-sans-500.woff", "fonts/ibm-plex-sans-500italic.woff2", "fonts/ibm-plex-sans-500italic.woff", "fonts/ibm-plex-sans-600italic.woff2", "fonts/ibm-plex-sans-600italic.woff", "fonts/ibm-plex-sans-600.woff2", "fonts/ibm-plex-sans-600.woff", "fonts/ibm-plex-sans-700.woff2", "fonts/ibm-plex-sans-700.woff", "fonts/ibm-plex-sans-700italic.woff2", "fonts/ibm-plex-sans-700italic.woff", "fonts/roboto-100.woff2", "fonts/roboto-100.woff", "fonts/roboto-100italic.woff2", "fonts/roboto-100italic.woff", "fonts/roboto-300.woff2", "fonts/roboto-300.woff", "fonts/roboto-300italic.woff2", "fonts/roboto-300italic.woff", "fonts/roboto-regular.woff2", "fonts/roboto-regular.woff", "fonts/roboto-italic.woff2", "fonts/roboto-italic.woff", "fonts/roboto-500.woff2", "fonts/roboto-500.woff", "fonts/roboto-500italic.woff2", "fonts/roboto-500italic.woff", "fonts/roboto-700.woff2", "fonts/roboto-700.woff", "fonts/roboto-700italic.woff2", "fonts/roboto-700italic.woff", "fonts/roboto-900.woff2", "fonts/roboto-900.woff", "fonts/roboto-900italic.woff2", "fonts/roboto-900italic.woff", "fonts/mp-font.woff2", "fonts/mp-font.woff", "fonts/mp-font.svg", "cursors/zoom-in.png", "cursors/zoom-out.png", "cursors/grab.png", "cursors/grabbing.png", "images/chrome.png", "images/edge.png", "images/firefox.png", "images/safari.png", "images/showcase-password-background.jpg", "images/matterport-logo-light.svg", "images/puck_256_red.png", "images/escape.png", "images/headset-cardboard.png", "images/headset-quest.png", "images/Desktop-help-play-button.svg", "images/Desktop-help-spacebar.png", "images/mattertag-disc-128-free.v1.png", "images/mobile-help-play-button.svg", "images/nav_help_360.png", "images/nav_help_click_inside.png", "images/nav_help_gesture_drag.png", "images/nav_help_gesture_drag_two_finger.png", "images/nav_help_gesture_pinch.png", "images/nav_help_gesture_position.png", "images/nav_help_gesture_position_two_finger.png", "images/nav_help_gesture_tap.png", "images/nav_help_inside_key.png", "images/nav_help_keyboard_all.png", "images/nav_help_keyboard_left_right.png", "images/nav_help_keyboard_up_down.png", "images/nav_help_mouse_click.png", "images/nav_help_mouse_drag_left.png", "images/nav_help_mouse_drag_right.png", "images/nav_help_mouse_position_left.png", "images/nav_help_mouse_position_right.png", "images/nav_help_mouse_zoom.png", "images/nav_help_tap_inside.png", "images/nav_help_zoom_keys.png", "images/tagbg.png", "images/tagmask.png", "images/NoteColor.png", "images/NoteIcon.png", "images/pinAnchor.png", "images/360_placement_pin_mask.png", "images/exterior.png", "images/exterior_hover.png", "images/interior.png", "images/interior_hover.png", "images/tagbg.png", "images/tagmask.png", "images/roboto-700-42_0.png",  "images/scope.svg",  "images/vert_arrows.png", "images/surface_grid_planar_256.png", "locale/strings-en-US.json","locale/strings.json"]
+    for js in js_files:
+        assets.append("js/" + js + ".js")
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for asset in assets:
-            executor.submit(downloadFile, f"{base}{asset}", asset)
+            local_file = asset
+            if local_file.endswith('/'):
+                local_file = local_file	+ "index.html"
+            executor.submit(downloadFile, f"{base}{asset}", local_file)
 
 def setAccessURLs(pageid):
     global accessurls
@@ -91,10 +97,13 @@ def setAccessURLs(pageid):
         accessurls.append(filejson["templates"][0].split("?")[-1])
 
 def downloadInfo(pageid):
-    assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files"]
+    assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v1/player/models/{pageid}/", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files"]
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for asset in assets:
-            executor.submit(downloadFile, f"https://my.matterport.com/{asset}", asset)
+            local_file = asset
+            if local_file.endswith('/'):
+                local_file = local_file	+ "index.html"        	
+            executor.submit(downloadFile, f"https://my.matterport.com/{asset}", local_file	)
     makeDirs("api/mp/models")
     with open(f"api/mp/models/graph", "w", encoding="UTF-8") as f:
         f.write('{"data": "empty"}')
@@ -103,20 +112,21 @@ def downloadInfo(pageid):
     setAccessURLs(pageid)
 
 def downloadPics(pageid):
-    with open(f"api/v1/player/models/{pageid}", "r", encoding="UTF-8") as f:
+    with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for image in modeldata["images"]:
             executor.submit(downloadFile, image["src"], urlparse(image["src"]).path[1:])
 
 def downloadModel(pageid,accessurl):
-    with open(f"api/v1/player/models/{pageid}", "r", encoding="UTF-8") as f:
+    with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     accessid = re.search(r'models/([a-z0-9-_./~]*)/\{filename\}', accessurl).group(1)
     makeDirs(f"models/{accessid}")
     os.chdir(f"models/{accessid}")
     downloadUUID(accessurl,modeldata["job"]["uuid"])
     downloadSweeps(accessurl, modeldata["sweeps"])
+    os.chdir(pageid)
 
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
@@ -124,6 +134,7 @@ def patchShowcase():
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)","",j)
     j = j.replace(f'"/api/mp/','`${window.location.pathname}`+"api/mp/')
+    j = j.replace(f'"POST"','"GET"') #no post requests
     j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
     j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
     with open("js/showcase.js","w",encoding="UTF-8") as f:
@@ -158,11 +169,22 @@ def downloadPage(pageid):
     downloadPics(pageid)
     print("Downloading model...")
     downloadModel(pageid,accessurl)
+    open("api/v1/event", 'a').close()
     print("Done!")
 
 def initiateDownload(url):
-    downloadPage(url.split("m=")[-1].split("&")[0])
+    downloadPage(getPageId(url))
+def getPageId(url):
+    return url.split("m=")[-1].split("&")[0]
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
         initiateDownload(sys.argv[1])
+    elif len(sys.argv) == 4:
+        from http.server import HTTPServer, SimpleHTTPRequestHandler
+        os.chdir(getPageId(sys.argv[1]))
+        print ("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
+        httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), SimpleHTTPRequestHandler)
+        httpd.serve_forever()
+    else:
+        print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server and open http://127.0.0.1:8080 in a browser: matterport-dl.py [url_or_page_id] 127.0.0.1 8080")
