@@ -65,7 +65,30 @@ def downloadSweeps(accessurl, sweeps):
                     while executor._work_queue.qsize() > 64:
                         time.sleep(0.01)
 
-def downloadFile(url, file):
+def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
+    global USE_PROXY
+    if "/" in file:
+        makeDirs(os.path.dirname(file))
+    if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+        logging.debug(f'Skipping json post to url: {url} ({descriptor}) as already downloaded')
+    
+    opener = getUrlOpener(USE_PROXY)
+    opener.addheaders.append(('Content-Type','application/json'))
+
+    req = urllib.request.Request(url)
+
+    for header in opener.addheaders: #not sure why we can't use the opener itself but it doesn't override it properly
+        req.add_header(header[0],header[1])
+    
+    body_bytes = bytes(post_json_str, "utf-8")
+    req.add_header('Content-Length', len(body_bytes))
+    resp = urllib.request.urlopen(req, body_bytes)
+    with open(file, 'w', encoding="UTF-8") as the_file:
+        the_file.write(resp.read().decode("UTF-8"))
+    logging.debug(f'Successfully downloaded w/ JSON post to: {url} ({descriptor}) to: {file}')
+
+
+def downloadFile(url, file, post_data=None):
     global accessurls
     if "/" in file:
         makeDirs(os.path.dirname(file))
@@ -76,7 +99,7 @@ def downloadFile(url, file):
         logging.debug(f'Skipping url: {url} as already downloaded')
         return;
     try:
-        urllib.request.urlretrieve(url, file)
+        _filename,headers = urllib.request.urlretrieve(url, file,None,post_data)
         logging.debug(f'Successfully downloaded: {url} to: {file}')
         return
     except urllib.error.HTTPError as err:
@@ -97,6 +120,15 @@ def downloadFile(url, file):
         logging.error(f'Failed to succeed for url {url}')
         raise Exception
     logging.error(f'Failed2 to succeed for url {url}')#hopefully not getting here?
+
+def downloadGraphModels(pageid):
+    global GRAPH_DATA_REQ
+    makeDirs("api/mp/models")
+    
+    for key in GRAPH_DATA_REQ:
+        file_path = f"api/mp/models/graph_{key}.json"
+        downloadFileWithJSONPost("https://my.matterport.com/api/mp/models/graph",file_path, GRAPH_DATA_REQ[key], key)
+
 
 def downloadAssets(base):
     js_files = ["showcase","browser-check","79","134","136","164","250","321","356","423","464","524","539","614","764","828","833","947"]
@@ -156,7 +188,6 @@ def patchShowcase():
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)","",j)
     j = j.replace(f'"/api/mp/','`${window.location.pathname}`+"api/mp/')
-    j = j.replace(f'"POST"','"GET"') #no post requests
     j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
     j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
     with open("js/showcase.js","w",encoding="UTF-8") as f:
@@ -164,9 +195,6 @@ def patchShowcase():
 
 
 def downloadPage(pageid):
-	#proxy = urllib.request.ProxyHandler({'http': '127.0.0.1'})
-#	opener = urllib.request.build_opener(proxy)
-#	urllib.request.install_opener(opener)
 
     makeDirs(pageid)
     os.chdir(pageid)
@@ -175,6 +203,7 @@ def downloadPage(pageid):
     page_root_dir = os.path.abspath('.')
     print("Downloading base page...")
     r = requests.get(f"https://my.matterport.com/show/?m={pageid}")
+    r.encoding = "utf-8"
     staticbase = re.search(r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
     match = re.search(r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', r.text)
     if match:
@@ -187,7 +216,8 @@ def downloadPage(pageid):
     content = r.text.replace(staticbase,".").replace('"https://cdn-1.matterport.com/','`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/','`${window.location.origin}${window.location.pathname}` + "').replace("window.MP_PREFETCHED_MODELDATA",f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
     content = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T","validUntil\":\"2099-01-01T",content)
     with open("index.html", "w", encoding="UTF-8") as f:
-        f.write(content)
+        f.write(content )
+    
     print("Downloading static assets...")
     downloadAssets(staticbase)
     # Patch showcase.js to fix expiration issue
@@ -196,6 +226,8 @@ def downloadPage(pageid):
     downloadInfo(pageid)
     print("Downloading images...")
     downloadPics(pageid)
+    print("Downloading graph model data...")
+    downloadGraphModels(pageid)	
     print(f"Downloading model... access url: {accessurl}")
     downloadModel(pageid,accessurl)
     os.chdir(page_root_dir)
@@ -212,9 +244,61 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         if code == 404:
             logging.warning(f'404 error: {self.path} may not be downloading everything right')
         SimpleHTTPRequestHandler.send_error(self, code, message)
+    
+    def do_POST(self):
+        print(f'POST request, {self.path}')
+        if self.path == "/api/mp/models/graph":
+            self.send_response(200)
+            self.end_headers()
+            content_len = int(self.headers.get('content-length'))
+            post_body = self.rfile.read(content_len).decode('utf-8')
+            json_body = json.loads(post_body)
+            option_name = json_body["operationName"]
+            if option_name in GRAPH_DATA_REQ:
+                file_path = f"api/mp/models/graph_{option_name}.json"
+                with open(file_path, "r", encoding="UTF-8") as f:
+                    self.wfile.write(f.read().encode('utf-8'))
+                    return;
+            
+            self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
+            return
+        
+        self.do_GET() #just treat the POST as a get otherwise:)
 
+    def guess_type(self, path):
+        res = SimpleHTTPRequestHandler.guess_type(self, path)
+        if res == "text/html":
+            return "text/html; charset=UTF-8"
+        return res
+        # if path.endswith(".js"):
+        #     return "application/javascript"
+        # else:
+        #     return SimpleHTTPRequestHandler.guess_type(self, path)
+
+USE_PROXY=False
+
+GRAPH_DATA_REQ = {}
+
+def openDirReadGraphReqs(path):
+    for root, dirs, filenames in os.walk(path):
+        for file in filenames:
+            with open(os.path.join(root, file), "r", encoding="UTF-8") as f:
+                GRAPH_DATA_REQ[file.replace(".json","")] = f.read()
+
+def getUrlOpener(use_proxy):
+    if (use_proxy):
+        proxy = urllib.request.ProxyHandler({'http': '127.0.0.1:1234','https': '127.0.0.1:1234'})
+        opener = urllib.request.build_opener(proxy)
+    else:
+        opener = urllib.request.build_opener()
+    opener.addheaders = [('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64)'),('x-matterport-application-name','showcase')]
+    return opener
+OUR_OPENER = getUrlOpener(USE_PROXY)
 
 if __name__ == "__main__":
+    urllib.request.install_opener(OUR_OPENER)
+    
+    openDirReadGraphReqs("graph_posts")
     if len(sys.argv) == 2:
         initiateDownload(sys.argv[1])
     elif len(sys.argv) == 4:
