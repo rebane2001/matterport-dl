@@ -395,11 +395,11 @@ ADVANCED_DOWNLOAD_ALL=False
 
 GRAPH_DATA_REQ = {}
 
-def openDirReadGraphReqs(path):
+def openDirReadGraphReqs(path,pageId):
     for root, dirs, filenames in os.walk(path):
         for file in filenames:
             with open(os.path.join(root, file), "r", encoding="UTF-8") as f:
-                GRAPH_DATA_REQ[file.replace(".json","")] = f.read()
+                GRAPH_DATA_REQ[file.replace(".json","")] = f.read().replace("[MATTERPORT_MODEL_ID]",pageId)
 
 def getUrlOpener(use_proxy):
     if (use_proxy):
@@ -425,12 +425,14 @@ if __name__ == "__main__":
     PROXY = getCommandLineArg("--proxy", True)
     OUR_OPENER = getUrlOpener(PROXY)
     urllib.request.install_opener(OUR_OPENER)
-
-    openDirReadGraphReqs("graph_posts")
+    pageId = ""
+    if len(sys.argv) > 1:
+        pageId = getPageId(sys.argv[1])
+    openDirReadGraphReqs("graph_posts",pageId)
     if len(sys.argv) == 2:
-        initiateDownload(sys.argv[1])
+        initiateDownload(pageId)
     elif len(sys.argv) == 4:
-        os.chdir(getPageId(sys.argv[1]))
+        os.chdir(getPageId(pageId))
         logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
         logging.info("Server started up")
         print ("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
