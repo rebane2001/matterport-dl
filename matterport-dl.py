@@ -98,7 +98,7 @@ def downloadFile(url, file, post_data=None):
     if "/" in file:
         makeDirs(os.path.dirname(file))
     if "?" in file:
-    	file = file.split('?')[0]
+        file = file.split('?')[0]
 
     if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
         logging.debug(f'Skipping url: {url} as already downloaded')
@@ -153,7 +153,7 @@ def downloadAssets(base):
     for js in js_files:
         assets.append("js/" + js + ".js")
     for lc in language_codes:
-    	assets.append("locale/messages/strings_" + lc + ".json")
+        assets.append("locale/messages/strings_" + lc + ".json")
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for asset in assets:
             local_file = asset
@@ -351,8 +351,8 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         SimpleHTTPRequestHandler.send_error(self, code, message)
     
     def do_GET(self):
-    	if self.path.startswith("/locale/messages/strings_") and not os.path.exists(f".{self.path}"):
-    		self.path = "/locale/strings.json"
+        if self.path.startswith("/locale/messages/strings_") and not os.path.exists(f".{self.path}"):
+            self.path = "/locale/strings.json"
         raw_path, _, query = self.path.partition('?')
         if "crop=" in query and raw_path.endswith(".jpg"):
             query_args = urllib.parse.parse_qs(query)
@@ -372,8 +372,8 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 self.path = test_path
                 logging.info(f"{self.path} found so replacing it :)")
 
-    	SimpleHTTPRequestHandler.do_GET(self)
-    	return;
+        SimpleHTTPRequestHandler.do_GET(self)
+        return;
     def do_POST(self):
         print(f'POST request, {self.path}')
         if self.path == "/api/mp/models/graph":
