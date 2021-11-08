@@ -3,8 +3,6 @@
 '''
 Downloads virtual tours from matterport.
 Usage is either running this program with the URL/pageid as an argument or calling the initiateDownload(URL/pageid) method.
-Output is a folder that can be hosted statically (eg python3 -m http.server) and visited in the browser without an internet connection.
-Dollhouse view is a bit broken but everything else should work okayish.
 '''
 
 import requests
@@ -55,7 +53,6 @@ def downloadUUID(accessurl, uuid):
             downloadFile(cur_file, f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
     except Exception as ex:
         logging.warning(f'Exception downloading file: {cur_file} of: {str(ex)}')
-        #raise
         pass #very lazy and bad way to only download required files
 
 def downloadSweeps(accessurl, sweeps):
@@ -74,7 +71,7 @@ def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
         makeDirs(os.path.dirname(file))
     if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
         logging.debug(f'Skipping json post to url: {url} ({descriptor}) as already downloaded')
-    
+
     opener = getUrlOpener(PROXY)
     opener.addheaders.append(('Content-Type','application/json'))
 
@@ -82,7 +79,7 @@ def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
 
     for header in opener.addheaders: #not sure why we can't use the opener itself but it doesn't override it properly
         req.add_header(header[0],header[1])
-    
+
     body_bytes = bytes(post_json_str, "utf-8")
     req.add_header('Content-Length', len(body_bytes))
     resp = urllib.request.urlopen(req, body_bytes)
@@ -94,7 +91,7 @@ def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
 def downloadFile(url, file, post_data=None):
     global accessurls
     url = GetOrReplaceKey(url,False)
-    
+
     if "/" in file:
         makeDirs(os.path.dirname(file))
     if "?" in file:
@@ -129,7 +126,7 @@ def downloadFile(url, file, post_data=None):
 def downloadGraphModels(pageid):
     global GRAPH_DATA_REQ
     makeDirs("api/mp/models")
-    
+
     for key in GRAPH_DATA_REQ:
         file_path = f"api/mp/models/graph_{key}.json"
         downloadFileWithJSONPost("https://my.matterport.com/api/mp/models/graph",file_path, GRAPH_DATA_REQ[key], key)
@@ -138,20 +135,45 @@ def downloadGraphModels(pageid):
 def downloadAssets(base):
     js_files = ["showcase","browser-check","79","134","136","164","250","321","356","423","464","524","539","614","764","828","833","947"]
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
- "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
- "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
- "en-US", "en-EG", "en-AU", "en-GB", "en-CA", "en-NZ", "en-IE", "en-ZA", "en-JM",
- "en-BZ", "en-TT", "et", "fo", "fa", "fi", "fr", "fr-BE", "fr-CA", "fr-CH", "fr-LU",
- "gd", "gd-IE", "de", "de-CH", "de-AT", "de-LU", "de-LI", "el", "he", "hi", "hu", 
- "is", "id", "it", "it-CH", "ja", "ko", "lv", "lt", "mk", "mt", "no", "pl",
- "pt-BR", "pt", "rm", "ro", "ro-MO", "ru", "ru-MI", "sz", "sr", "sk", "sl", "sb",
- "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO", 
- "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI", 
- "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh",
- "ji", "zu"];
-    assets = ["css/showcase.css", "css/unsupported_browser.css", "fonts/ibm-plex-sans-100.woff2", "fonts/ibm-plex-sans-100.woff", "fonts/ibm-plex-sans-100italic.woff2", "fonts/ibm-plex-sans-100italic.woff", "fonts/ibm-plex-sans-200.woff2", "fonts/ibm-plex-sans-200.woff", "fonts/ibm-plex-sans-200italic.woff2", "fonts/ibm-plex-sans-200italic.woff", "fonts/ibm-plex-sans-300.woff2", "fonts/ibm-plex-sans-300.woff", "fonts/ibm-plex-sans-300italic.woff2", "fonts/ibm-plex-sans-300italic.woff", "fonts/ibm-plex-sans-regular.woff2", "fonts/ibm-plex-sans-regular.woff", "fonts/ibm-plex-sans-italic.woff2", "fonts/ibm-plex-sans-italic.woff", "fonts/ibm-plex-sans-500.woff2", "fonts/ibm-plex-sans-500.woff", "fonts/ibm-plex-sans-500italic.woff2", "fonts/ibm-plex-sans-500italic.woff", "fonts/ibm-plex-sans-600italic.woff2", "fonts/ibm-plex-sans-600italic.woff", "fonts/ibm-plex-sans-600.woff2", "fonts/ibm-plex-sans-600.woff", "fonts/ibm-plex-sans-700.woff2", "fonts/ibm-plex-sans-700.woff", "fonts/ibm-plex-sans-700italic.woff2", "fonts/ibm-plex-sans-700italic.woff", "fonts/roboto-100.woff2", "fonts/roboto-100.woff", "fonts/roboto-100italic.woff2", "fonts/roboto-100italic.woff", "fonts/roboto-300.woff2", "fonts/roboto-300.woff", "fonts/roboto-300italic.woff2", "fonts/roboto-300italic.woff", "fonts/roboto-regular.woff2", "fonts/roboto-regular.woff", "fonts/roboto-italic.woff2", "fonts/roboto-italic.woff", "fonts/roboto-500.woff2", "fonts/roboto-500.woff", "fonts/roboto-500italic.woff2", "fonts/roboto-500italic.woff", "fonts/roboto-700.woff2", "fonts/roboto-700.woff", "fonts/roboto-700italic.woff2", "fonts/roboto-700italic.woff", "fonts/roboto-900.woff2", "fonts/roboto-900.woff", "fonts/roboto-900italic.woff2", "fonts/roboto-900italic.woff", "fonts/mp-font.woff2", "fonts/mp-font.woff", "fonts/mp-font.svg", "cursors/zoom-in.png", "cursors/zoom-out.png", "cursors/grab.png", "cursors/grabbing.png", "images/chrome.png", "images/edge.png", "images/firefox.png", "images/safari.png", "images/showcase-password-background.jpg", "images/matterport-logo-light.svg", "images/puck_256_red.png", "images/escape.png", "images/headset-cardboard.png", "images/headset-quest.png", "images/Desktop-help-play-button.svg", "images/Desktop-help-spacebar.png", "images/mattertag-disc-128-free.v1.png", "images/mobile-help-play-button.svg", "images/nav_help_360.png", "images/nav_help_click_inside.png", "images/nav_help_gesture_drag.png", "images/nav_help_gesture_drag_two_finger.png", "images/nav_help_gesture_pinch.png", "images/nav_help_gesture_position.png", "images/nav_help_gesture_position_two_finger.png", "images/nav_help_gesture_tap.png", "images/nav_help_inside_key.png", "images/nav_help_keyboard_all.png", "images/nav_help_keyboard_left_right.png", "images/nav_help_keyboard_up_down.png", "images/nav_help_mouse_click.png", "images/nav_help_mouse_drag_left.png", "images/nav_help_mouse_drag_right.png", "images/nav_help_mouse_position_left.png", "images/nav_help_mouse_position_right.png", "images/nav_help_mouse_zoom.png", "images/nav_help_tap_inside.png", "images/nav_help_zoom_keys.png", "images/tagbg.png", "images/tagmask.png", "images/NoteColor.png", "images/NoteIcon.png", "images/pinAnchor.png", "images/360_placement_pin_mask.png", "images/exterior.png", "images/exterior_hover.png", "images/interior.png", "images/interior_hover.png", "images/tagbg.png", "images/tagmask.png", "images/roboto-700-42_0.png",  "images/scope.svg",  "images/vert_arrows.png", "images/surface_grid_planar_256.png","locale/strings.json"]
+     "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
+     "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
+     "en-US", "en-EG", "en-AU", "en-GB", "en-CA", "en-NZ", "en-IE", "en-ZA", "en-JM",
+     "en-BZ", "en-TT", "et", "fo", "fa", "fi", "fr", "fr-BE", "fr-CA", "fr-CH", "fr-LU",
+     "gd", "gd-IE", "de", "de-CH", "de-AT", "de-LU", "de-LI", "el", "he", "hi", "hu",
+     "is", "id", "it", "it-CH", "ja", "ko", "lv", "lt", "mk", "mt", "no", "pl",
+     "pt-BR", "pt", "rm", "ro", "ro-MO", "ru", "ru-MI", "sz", "sr", "sk", "sl", "sb",
+     "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO",
+     "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI",
+     "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh",
+     "ji", "zu"];
+    font_files = ["ibm-plex-sans-100", "ibm-plex-sans-100italic", "ibm-plex-sans-200", "ibm-plex-sans-200italic", "ibm-plex-sans-300",
+    "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic",
+    "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic",
+    "roboto-300", "roboto-300italic", "roboto-500", "roboto-500italic", "roboto-700", "roboto-700italic", "roboto-900", "roboto-900italic",
+    "roboto-italic", "roboto-regular"]
+
+    #extension assumed to be .png unless it is .svg or .jpg, for anything else place it in assets
+    image_files = ["360_placement_pin_maskH", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior",
+    "exterior_hover", "firefox", "headset-cardboard", "headset-quest", "interior", "interior_hover", "matterport-logo-light.svg",
+    "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag",
+    "nav_help_gesture_drag_two_finger", "nav_help_gesture_pinch", "nav_help_gesture_position", "nav_help_gesture_position_two_finger",
+    "nav_help_gesture_tap", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down",
+    "nav_help_mouse_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left",
+    "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "NoteIcon", "pinAnchor",
+    "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask",
+    "vert_arrows"]
+
+    assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
+    "cursors/zoom-out.png", "locale/strings.json",]
+
+    for image in image_files:
+        if not image.endswith(".jpg") and not image.endswith(".svg"):
+            image = image + ".png"
+        assets.append("images/" + image)
     for js in js_files:
         assets.append("js/" + js + ".js")
+    for f in font_files:
+        assets.extend(["fonts/" + f + ".woff", "fonts/" + f + ".woff2"])
     for lc in language_codes:
         assets.append("locale/messages/strings_" + lc + ".json")
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
@@ -176,7 +198,7 @@ def downloadInfo(pageid):
         for asset in assets:
             local_file = asset
             if local_file.endswith('/'):
-                local_file = local_file    + "index.html"            
+                local_file = local_file    + "index.html"
             executor.submit(downloadFile, f"https://my.matterport.com/{asset}", local_file    )
     makeDirs("api/mp/models")
     with open(f"api/mp/models/graph", "w", encoding="UTF-8") as f:
@@ -232,7 +254,7 @@ def GetOrReplaceKey(url, is_read_key):
     elif not is_read_key and KNOWN_ACCESS_KEY:
         url = url.replace(url_key, KNOWN_ACCESS_KEY)
     return url
-        
+
 
 def downloadPage(pageid):
     global ADVANCED_DOWNLOAD_ALL
@@ -276,7 +298,7 @@ def downloadPage(pageid):
         ## queries.GetModelPrefetch.data.model.locations[X].pano.resolutions[Y] <--- has the resolutions they offer for this one
         ## goal here is to move away from some of the access url hacks, but if we are successful on try one won't matter:)
 
-        
+
         try:
             match = re.search(r'window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});', r.text)
             if match:
@@ -310,7 +332,7 @@ def downloadPage(pageid):
                                             downloadFile(full_text_url + "&" + complete_add, urlparse(full_text_url).path[1:] + complete_add_file + ".jpg")
                                         except:
                                             pass
-                            
+
                             downloadFile(full_text_url, urlparse(full_text_url).path[1:])
                     except:
                         pass
@@ -322,7 +344,7 @@ def downloadPage(pageid):
     content = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T","validUntil\":\"2099-01-01T",content)
     with open("index.html", "w", encoding="UTF-8") as f:
         f.write(content )
-    
+
     print("Downloading static assets...")
     downloadAssets(staticbase)
     # Patch showcase.js to fix expiration issue
@@ -332,7 +354,7 @@ def downloadPage(pageid):
     print("Downloading images...")
     downloadPics(pageid)
     print("Downloading graph model data...")
-    downloadGraphModels(pageid)    
+    downloadGraphModels(pageid)
     print(f"Downloading model... access url: {accessurl}")
     downloadModel(pageid,accessurl)
     os.chdir(page_root_dir)
@@ -349,9 +371,12 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         if code == 404:
             logging.warning(f'404 error: {self.path} may not be downloading everything right')
         SimpleHTTPRequestHandler.send_error(self, code, message)
-    
+
     def do_GET(self):
+        redirect_msg=None
+        orig_request = self.path
         if self.path.startswith("/locale/messages/strings_") and not os.path.exists(f".{self.path}"):
+            redirect_msg = "original request was for a locale we do not have downloaded"
             self.path = "/locale/strings.json"
         raw_path, _, query = self.path.partition('?')
         if "crop=" in query and raw_path.endswith(".jpg"):
@@ -361,7 +386,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 crop_addition = f'crop={crop_addition[0]}'
             else:
                 crop_addition = ''
-                
+
             width_addition = query_args.get("width", None)
             if width_addition is not None:
                 width_addition = f'width={width_addition[0]}_'
@@ -370,29 +395,43 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             test_path = raw_path + width_addition + crop_addition + ".jpg"
             if os.path.exists(f".{test_path}"):
                 self.path = test_path
-                logging.info(f"{self.path} found so replacing it :)")
+                redirect_msg = "dollhouse/floorplan texture request that we have downloaded, better than generic texture file"
+        if redirect_msg is not None or orig_request != self.path:
+            logging.info(f'Redirecting {orig_request} => {self.path} as {redirect_msg}')
+
+
 
         SimpleHTTPRequestHandler.do_GET(self)
         return;
     def do_POST(self):
-        print(f'POST request, {self.path}')
-        if self.path == "/api/mp/models/graph":
-            self.send_response(200)
-            self.end_headers()
-            content_len = int(self.headers.get('content-length'))
-            post_body = self.rfile.read(content_len).decode('utf-8')
-            json_body = json.loads(post_body)
-            option_name = json_body["operationName"]
-            if option_name in GRAPH_DATA_REQ:
-                file_path = f"api/mp/models/graph_{option_name}.json"
-                if os.path.exists(file_path):
-                    with open(file_path, "r", encoding="UTF-8") as f:
-                        self.wfile.write(f.read().encode('utf-8'))
-                        return;
-            
-            self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
-            return
-        
+        post_msg=None
+        try:
+            if self.path == "/api/mp/models/graph":
+                self.send_response(200)
+                self.end_headers()
+                content_len = int(self.headers.get('content-length'))
+                post_body = self.rfile.read(content_len).decode('utf-8')
+                json_body = json.loads(post_body)
+                option_name = json_body["operationName"]
+                if option_name in GRAPH_DATA_REQ:
+                    file_path = f"api/mp/models/graph_{option_name}.json"
+                    if os.path.exists(file_path):
+                        with open(file_path, "r", encoding="UTF-8") as f:
+                            self.wfile.write(f.read().encode('utf-8'))
+                            post_msg=f"graph of operationName: {option_name} we are handling internally"
+                            return;
+                    else:
+                        post_msg=f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead"
+
+                self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
+                return
+        except Exception as error:
+            post_msg = f"Error trying to handle a post request of: {str(error)} this should not happen"
+            pass
+        finally:
+            if post_msg is not None:
+                logging.info(f'Handling a post request on {self.path}: {post_msg}')
+
         self.do_GET() #just treat the POST as a get otherwise:)
 
     def guess_type(self, path):
@@ -400,10 +439,6 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         if res == "text/html":
             return "text/html; charset=UTF-8"
         return res
-        # if path.endswith(".js"):
-        #     return "application/javascript"
-        # else:
-        #     return SimpleHTTPRequestHandler.guess_type(self, path)
 
 PROXY=False
 ADVANCED_DOWNLOAD_ALL=False
@@ -436,7 +471,7 @@ def getCommandLineArg(name, has_value):
     return False
 
 if __name__ == "__main__":
-    ADVANCED_DOWNLOAD_ALL = getCommandLineArg("--advanced-download", False) 
+    ADVANCED_DOWNLOAD_ALL = getCommandLineArg("--advanced-download", False)
     PROXY = getCommandLineArg("--proxy", True)
     OUR_OPENER = getUrlOpener(PROXY)
     urllib.request.install_opener(OUR_OPENER)
