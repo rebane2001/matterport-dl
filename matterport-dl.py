@@ -26,6 +26,7 @@ import decimal
 
 # Weird hack
 accessurls = []
+SHOWCASE_INTERNAL_NAME = "showcase-internal.js"
 
 def makeDirs(dirname):
     pathlib.Path(dirname).mkdir(parents=True, exist_ok=True)
@@ -227,12 +228,16 @@ def downloadModel(pageid,accessurl):
 
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
+    global SHOWCASE_INTERNAL_NAME
     with open("js/showcase.js","r",encoding="UTF-8") as f:
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)","",j)
     j = j.replace(f'"/api/mp/','`${window.location.pathname}`+"api/mp/')
     j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
     j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
+    with open(f"js/{SHOWCASE_INTERNAL_NAME}","w",encoding="UTF-8") as f:
+        f.write(j)
+    j = j.replace(f'"POST"','"GET"') #no post requests for external hosted
     with open("js/showcase.js","w",encoding="UTF-8") as f:
         f.write(j)
 
@@ -346,8 +351,10 @@ def downloadPage(pageid):
         f.write(content )
 
     print("Downloading static assets...")
+    if os.path.exists("js/showcase.js"): #we want to always fetch showcase.js in case we patch it differently or the patching function starts to not work well run multiple times on itself
+        os.replace("js/showcase.js","js/showcase-bk.js") #backing up existing showcase file to be safe
     downloadAssets(staticbase)
-    # Patch showcase.js to fix expiration issue
+    # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
     print("Downloading model info...")
     downloadInfo(pageid)
@@ -373,8 +380,13 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         SimpleHTTPRequestHandler.send_error(self, code, message)
 
     def do_GET(self):
+        global SHOWCASE_INTERNAL_NAME
         redirect_msg=None
         orig_request = self.path
+        if self.path.startswith("/js/showcase.js") and os.path.exists(f"js/{SHOWCASE_INTERNAL_NAME}"):
+            redirect_msg = "using our internal showcase.js file"
+            self.path = f"/js/{SHOWCASE_INTERNAL_NAME}"
+
         if self.path.startswith("/locale/messages/strings_") and not os.path.exists(f".{self.path}"):
             redirect_msg = "original request was for a locale we do not have downloaded"
             self.path = "/locale/strings.json"
