@@ -165,7 +165,7 @@ def downloadAssets(base):
     "vert_arrows"]
 
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
-    "cursors/zoom-out.png", "locale/strings.json",]
+    "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css"]
 
     for image in image_files:
         if not image.endswith(".jpg") and not image.endswith(".svg"):
