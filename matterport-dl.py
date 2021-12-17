@@ -134,7 +134,7 @@ def downloadGraphModels(pageid):
 
 
 def downloadAssets(base):
-    js_files = ["showcase","browser-check","79","134","136","164","250","321","356","423","464","524","539","614","764","828","833","947"]
+    js_files = ["showcase","browser-check","30","79","134","136","164","250","321","356","423","464","524","539","606","614","666","764","828","833","947"]
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
      "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
      "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
