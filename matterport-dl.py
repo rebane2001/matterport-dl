@@ -100,7 +100,7 @@ def downloadFile(url, file, post_data=None):
 
     if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
         logging.debug(f'Skipping url: {url} as already downloaded')
-        return;
+        return
     try:
         _filename,headers = urllib.request.urlretrieve(url, file,None,post_data)
         logging.debug(f'Successfully downloaded: {url} to: {file}')
@@ -134,7 +134,9 @@ def downloadGraphModels(pageid):
 
 
 def downloadAssets(base):
-    js_files = ["showcase","browser-check","30","79","134","136","164","250","321","356","423","464","524","539","606","614","666","764","828","833","947"]
+    js_files = ["browser-check",
+        "30","47","66","79","134","136","143","164","250","251","316","321","356","371","376","383","386","423",
+        "464","524","525","539","584","606","614","666","718","721","726","764","828","833","838","932","947"]
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
      "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
      "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
@@ -146,7 +148,7 @@ def downloadAssets(base):
      "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO",
      "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI",
      "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh",
-     "ji", "zu"];
+     "ji", "zu"]
     font_files = ["ibm-plex-sans-100", "ibm-plex-sans-100italic", "ibm-plex-sans-200", "ibm-plex-sans-200italic", "ibm-plex-sans-300",
     "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic",
     "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic",
@@ -166,6 +168,18 @@ def downloadAssets(base):
 
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
     "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css"]
+
+    downloadFile(base + "js/showcase.js","js/showcase.js")
+    with open(f"js/showcase.js", "r", encoding="UTF-8") as f:
+	    showcase_cont = f.read()
+    #lets try to extract the js files it might be loading and make sure we know them
+    js_extracted = re.findall(r'\.e\(([0-9]{2,3})\)', showcase_cont)
+    js_extracted.sort()
+    for js in js_extracted:
+        if js not in js_files:
+            print(f'JS FILE EXTRACTED BUT not known, please file a github issue and tell us to add: {js}.js, will download for you though:)')
+            js_files.append(js)
+    
 
     for image in image_files:
         if not image.endswith(".jpg") and not image.endswith(".svg"):
