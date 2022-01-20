@@ -291,8 +291,10 @@ def downloadPage(pageid):
             }
         ]
 
-
-    logging.basicConfig(filename='run_report.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+    try:
+        logging.basicConfig(filename='run_report.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
     logging.debug(f'Started up a download run')
     page_root_dir = os.path.abspath('.')
     print("Downloading base page...")
@@ -509,7 +511,10 @@ if __name__ == "__main__":
         initiateDownload(pageId)
     elif len(sys.argv) == 4:
         os.chdir(getPageId(pageId))
-        logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+        try:
+            logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            logging.basicConfig(filename='server.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
         logging.info("Server started up")
         print ("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
