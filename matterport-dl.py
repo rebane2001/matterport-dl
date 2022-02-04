@@ -6,6 +6,7 @@ Usage is either running this program with the URL/pageid as an argument or calli
 '''
 
 import requests
+import functools
 import json
 import threading
 import concurrent.futures
@@ -22,7 +23,9 @@ from tqdm import tqdm
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import decimal
 
+print = functools.partial(print, flush=True)
 
+baseCloneDir = "clones/"
 
 # Weird hack
 accessurls = []
@@ -136,7 +139,7 @@ def downloadGraphModels(pageid):
 def downloadAssets(base):
     js_files = ["browser-check",
         "30","47","66","79","134","136","143","164","250","251","316","321","356","371","376","383","386","423",
-        "464","524","525","539","584","606","614","666","718","721","726","764","828","833","838","932","947"]
+        "464","524","525","539","580","584","606","614","666","718","721","726","764","828","833","838","932","947"]
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
      "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
      "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
@@ -291,8 +294,10 @@ def downloadPage(pageid):
             }
         ]
 
-
-    logging.basicConfig(filename='run_report.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+    try:
+        logging.basicConfig(filename='run_report.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
     logging.debug(f'Started up a download run')
     page_root_dir = os.path.abspath('.')
     print("Downloading base page...")
@@ -304,6 +309,7 @@ def downloadPage(pageid):
         accessurl = f'{match.group(1)}~/{{filename}}{match.group(3)}'
         print(accessurl)
     else:
+        print('Requesting', pageid)
         raise Exception("Can't find urls")
 
 
@@ -388,6 +394,10 @@ def getPageId(url):
     return url.split("m=")[-1].split("&")[0]
 
 class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        SERVEDIR=pageId
+        super().__init__(*args, directory=SERVEDIR, **kwargs)
+
     def send_error(self, code, message=None):
         if code == 404:
             logging.warning(f'404 error: {self.path} may not be downloading everything right')
@@ -402,7 +412,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.path = f"/js/{SHOWCASE_INTERNAL_NAME}"
 
         if self.path.startswith("/locale/messages/strings_") and not os.path.exists(f".{self.path}"):
-            redirect_msg = "original request was for a locale we do not have downloaded"
+            redirect_msg = "original request was for a locale that is not downloaded"
             self.path = "/locale/strings.json"
         raw_path, _, query = self.path.partition('?')
         if "crop=" in query and raw_path.endswith(".jpg"):
@@ -498,21 +508,40 @@ def getCommandLineArg(name, has_value):
 
 if __name__ == "__main__":
     ADVANCED_DOWNLOAD_ALL = getCommandLineArg("--advanced-download", False)
+    customBaseCloneDir = getCommandLineArg("--base-folder", True)
+    if customBaseCloneDir:
+      baseCloneDir = customBaseCloneDir
     PROXY = getCommandLineArg("--proxy", True)
     OUR_OPENER = getUrlOpener(PROXY)
     urllib.request.install_opener(OUR_OPENER)
-    pageId = ""
-    if len(sys.argv) > 1:
-        pageId = getPageId(sys.argv[1])
-    openDirReadGraphReqs("graph_posts",pageId)
-    if len(sys.argv) == 2:
+    pageId = getPageId(sys.argv[1])
+    if len(sys.argv) == 2: # Download mode
+        os.chdir(baseCloneDir)
+        openDirReadGraphReqs("graph_posts",pageId)
         initiateDownload(pageId)
-    elif len(sys.argv) == 4:
-        os.chdir(getPageId(pageId))
-        logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
-        logging.info("Server started up")
-        print ("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
+    elif len(sys.argv) == 4: # Serve mode
+        if os.path.isdir(pageId) and not os.path.isdir(os.path.join(baseCloneDir, pageId)):
+          print("WARNING:")
+          print("The folder '" + pageId + "' does not exist in the '" + baseCloneDir + "' directory, but does exist in the root directory.")
+          print("If you recently updated matterport-dl, then please move the '" + pageId + "' folder into the '" + baseCloneDir + "' directory")
+          print("For the time being, this will continue to work, but eventually all downloads need to be moved")
+          print(" ")
+          time.sleep(2)
+        else:
+          os.chdir(baseCloneDir)
+        if not os.path.isdir(pageId):
+          print("The folder '" + pageId + "' does not exist. Please download it using the download command. See the readme for more details")
+          sys.exit()
+        try:
+            logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            logging.basicConfig(filename='server.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
+        logging.info("Server started up")
+        if sys.argv[2] == '0.0.0.0':
+          print ("View in browser: http://localhost:" + sys.argv[3])
+        else:
+          print ("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
         httpd.serve_forever()
     else:
         print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support")
