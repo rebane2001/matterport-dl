@@ -43,15 +43,16 @@ def getVariants():
     return variants
 
 def downloadUUID(accessurl, uuid):
-    downloadFile(accessurl.format(filename=f'{uuid}_50k.dam'), f'{uuid}_50k.dam')
+    
+    downloadFile("UUID_DAM50K", True, accessurl.format(filename=f'{uuid}_50k.dam'), f'{uuid}_50k.dam')
     shutil.copy(f'{uuid}_50k.dam', f'..{os.path.sep}{uuid}_50k.dam')
     cur_file=""
     try:
         for i in range(1000):
             cur_file=accessurl.format(filename=f'{uuid}_50k_texture_jpg_high/{uuid}_50k_{i:03d}.jpg')
-            downloadFile(cur_file, f'{uuid}_50k_texture_jpg_high/{uuid}_50k_{i:03d}.jpg')
+            downloadFile("UUID_TEXTURE_HIGH", True, cur_file, f'{uuid}_50k_texture_jpg_high/{uuid}_50k_{i:03d}.jpg')
             cur_file=accessurl.format(filename=f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
-            downloadFile(cur_file, f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
+            downloadFile("UUID_TEXTURE_LOW", True, cur_file, f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
     except Exception as ex:
         logging.warning(f'Exception downloading file: {cur_file} of: {str(ex)}')
         pass #very lazy and bad way to only download required files
@@ -62,34 +63,40 @@ def downloadSweeps(accessurl, sweeps):
             for sweep in sweeps:
                 for variant in getVariants():
                     pbar.update(1)
-                    executor.submit(downloadFile, accessurl.format(filename=f'tiles/{sweep}/{variant}') + "&imageopt=1", f'tiles/{sweep}/{variant}')
+                    executor.submit(downloadFile, "MODEL_SWEEPS", True, accessurl.format(filename=f'tiles/{sweep}/{variant}') + "&imageopt=1", f'tiles/{sweep}/{variant}')
                     while executor._work_queue.qsize() > 64:
                         time.sleep(0.01)
 
-def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
+def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor):
     global PROXY
     if "/" in file:
         makeDirs(os.path.dirname(file))
     if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
-        logging.debug(f'Skipping json post to url: {url} ({descriptor}) as already downloaded')
+        logUrlDownloadSkipped(type, file, url, descriptor)
+        return
 
     opener = getUrlOpener(PROXY)
     opener.addheaders.append(('Content-Type','application/json'))
 
-    req = urllib.request.Request(url)
+    reqId = logUrlDownloadStart(type, file, url, descriptor, shouldExist)
+    try:
+        req = urllib.request.Request(url)
 
-    for header in opener.addheaders: #not sure why we can't use the opener itself but it doesn't override it properly
-        req.add_header(header[0],header[1])
+        for header in opener.addheaders: #not sure why we can't use the opener itself but it doesn't override it properly
+            req.add_header(header[0],header[1])
 
-    body_bytes = bytes(post_json_str, "utf-8")
-    req.add_header('Content-Length', len(body_bytes))
-    resp = urllib.request.urlopen(req, body_bytes)
-    with open(file, 'w', encoding="UTF-8") as the_file:
-        the_file.write(resp.read().decode("UTF-8"))
-    logging.debug(f'Successfully downloaded w/ JSON post to: {url} ({descriptor}) to: {file}')
+        body_bytes = bytes(post_json_str, "utf-8")
+        req.add_header('Content-Length', len(body_bytes))
+        resp = urllib.request.urlopen(req, body_bytes)
+        with open(file, 'w', encoding="UTF-8") as the_file:
+            the_file.write(resp.read().decode("UTF-8"))
+        logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId)
+    except Exception as ex:
+        logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId, ex)
+        raise ex
 
-
-def downloadFile(url, file, post_data=None):
+#Add type parameter, shortResourcePath, shouldExist
+def downloadFile(type, shouldExist, url, file, post_data=None):
     global accessurls
     url = GetOrReplaceKey(url,False)
 
@@ -99,14 +106,14 @@ def downloadFile(url, file, post_data=None):
         file = file.split('?')[0]
 
     if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
-        logging.debug(f'Skipping url: {url} as already downloaded')
+        logUrlDownloadSkipped(type, file, url, "")
         return
+    reqId = logUrlDownloadStart(type, file, url, "", shouldExist)
     try:
         _filename,headers = urllib.request.urlretrieve(url, file,None,post_data)
-        logging.debug(f'Successfully downloaded: {url} to: {file}')
+        logUrlDownloadFinish(type, file, url, "", shouldExist, reqId)
         return
     except urllib.error.HTTPError as err:
-        logging.warning(f'URL error dling {url} of will try alt: {str(err)}')
 
         # Try again but with different accessurls (very hacky!)
         if "?t=" in url:
@@ -115,13 +122,16 @@ def downloadFile(url, file, post_data=None):
                 try:
                     url2=f"{url.split('?')[0]}?{accessurl}"
                     urllib.request.urlretrieve(url2, file)
-                    logging.debug(f'Successfully downloaded through alt: {url2} to: {file}')
+                    logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId)
                     return
-                except urllib.error.HTTPError as err:
-                    logging.warning(f'URL error alt method tried url {url2} dling of: {str(err)}')
+                except urllib.error.HTTPError as err2:
+                    logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId, err2, True)
                     pass
-        logging.error(f'Failed to succeed for url {url}')
-        raise Exception
+        logUrlDownloadFinish(type, file, url, "", shouldExist, reqId, err)
+        raise err
+    except Exception as ex:
+        logUrlDownloadFinish(type, file, url, "", shouldExist, reqId, ex)
+        raise ex
     logging.error(f'Failed2 to succeed for url {url}')#hopefully not getting here?
 
 def downloadGraphModels(pageid):
@@ -130,11 +140,53 @@ def downloadGraphModels(pageid):
 
     for key in GRAPH_DATA_REQ:
         file_path = f"api/mp/models/graph_{key}.json"
-        downloadFileWithJSONPost("https://my.matterport.com/api/mp/models/graph",file_path, GRAPH_DATA_REQ[key], key)
+        downloadFileWithJSONPost("GRAPH_MODEL", True, "https://my.matterport.com/api/mp/models/graph",file_path, GRAPH_DATA_REQ[key], key)
 
+requestCounter = 0
+counterThreadLock = threading.Lock()
+def logUrlDownloadFinish(type, localTarget, url, additionalParams, shouldExist, requestID, error=None, altUrlExists=False):
+    logLevel = logging.INFO
+    prefix = "Finished"
+    if error:
+        if altUrlExists:
+            logLevel = logging.WARNING
+            error = f'PartErr of: {error}'
+            prefix = "aTryFail"
+        else:
+            logLevel = logging.ERROR
+            error = f'Error of: {error}'
+            prefix = "aFailure"
+    else:
+        error = ''
+    _logUrlDownload(logLevel, prefix, type, localTarget, url, additionalParams, shouldExist, requestID, error) #not sure if should lower log elve for shouldExist  false
+    
+def logUrlDownloadSkipped(type, localTarget, url, additionalParams):
+    _logUrlDownload(logging.DEBUG, "Skipped already downloaded", type, localTarget, url, additionalParams, False, "")
+def logUrlDownloadStart(type, localTarget, url, additionalParams, shouldExist):
+    global requestCounter, counterThreadLock
+    ourReqId=0
+    with counterThreadLock:
+        requestCounter+=1
+        ourReqId = requestCounter
+    _logUrlDownload(logging.DEBUG, "Starting", type, localTarget, url, additionalParams, shouldExist, ourReqId)
+    return ourReqId
+
+def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParams, shouldExist, requestID, optionalResult=None):
+    if optionalResult:
+        optionalResult = f'Result: {optionalResult}'
+    else:
+        optionalResult = ""
+
+   
+    logging.log(logLevel, f'{logPrefix} REQ for {type} {requestID}: should exist: {shouldExist} {optionalResult} File: {localTarget} at url: {url} {additionalParams}')
+
+
+    
 
 def downloadAssets(base):
-    js_files = ["browser-check",
+    global BRUTE_JS_DOWNLOAD
+    js_files = ["browser-check"]
+    js_files_manual = [ #not really used any more unless we run into bad results
         "30","46","47","66","79","134","136","143","164","250","251","316","321","356","371","376","383","386","422","423",
         "464","524","525","539","580","584","606","614","666","670","718","721","726","755","764","828","833","838","932","947"]
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
@@ -169,34 +221,60 @@ def downloadAssets(base):
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
     "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css"]
 
-    downloadFile(base + "js/showcase.js","js/showcase.js")
-    with open(f"js/showcase.js", "r", encoding="UTF-8") as f:
-	    showcase_cont = f.read()
+    file = "js/showcase.js"
+    typeDict = {file: "STATIC_JS"}
+    downloadFile("STATIC_ASSET", True, "https://my.matterport.com/favicon.ico", "favicon.ico") #mainly to avoid the 404
+    downloadFile(typeDict[file], True, base + file, file)
+
+    with open(file, "r", encoding="UTF-8") as f:
+        showcase_cont = f.read()
     #lets try to extract the js files it might be loading and make sure we know them
     js_extracted = re.findall(r'\.e\(([0-9]{2,3})\)', showcase_cont)
     js_extracted.sort()
+    for asset in assets:
+        typeDict[asset] = "STATIC_ASSET"
+        
     for js in js_extracted:
-        if js not in js_files:
-            print(f'JS FILE EXTRACTED BUT not known, please file a github issue and tell us to add: {js}.js, will download for you though:)')
-            js_files.append(js)
-    
+        file = f"js/{js}.js"
+        if js not in js_files and file not in assets:
+#            print(f'JS FILE EXTRACTED BUT not known, please create a github issue (if one does not exist for this file) and tell us to add: {file}, did download for this run though')
+            typeDict[file] = "DISCOVERED_JS"
+            assets.append(file)
+    if BRUTE_JS_DOWNLOAD:
+        for x in range(1,1000):
+            file = f"js/{x}.js"
+            if file not in assets:
+                typeDict[file] = "BRUTE_JS"
+                assets.append(file)
 
     for image in image_files:
         if not image.endswith(".jpg") and not image.endswith(".svg"):
             image = image + ".png"
-        assets.append("images/" + image)
+        file = "images/" + image
+        typeDict[file] = "STATIC_IMAGE"
+        assets.append(file)
     for js in js_files:
-        assets.append("js/" + js + ".js")
+        file = "js/" + js + ".js"
+        typeDict[file] = "STATIC_JS"
+        assets.append(file)
     for f in font_files:
-        assets.extend(["fonts/" + f + ".woff", "fonts/" + f + ".woff2"])
+        for file in ["fonts/" + f + ".woff", "fonts/" + f + ".woff2"]:
+            typeDict[file] = "STATIC_FONT"
+            assets.append(file)
     for lc in language_codes:
-        assets.append("locale/messages/strings_" + lc + ".json")
+        file = "locale/messages/strings_" + lc + ".json"
+        typeDict[file] = "STATIC_LOCAL_STRINGS"
+        assets.append(file)
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for asset in assets:
             local_file = asset
+            type = typeDict[asset]
             if local_file.endswith('/'):
                 local_file = local_file    + "index.html"
-            executor.submit(downloadFile, f"{base}{asset}", local_file)
+            shouldExist = True
+            if type.startswith("BRUTE"):
+                shouldExist = False
+            executor.submit(downloadFile, type, shouldExist, f"{base}{asset}", local_file)
 
 def setAccessURLs(pageid):
     global accessurls
@@ -214,12 +292,12 @@ def downloadInfo(pageid):
             local_file = asset
             if local_file.endswith('/'):
                 local_file = local_file    + "index.html"
-            executor.submit(downloadFile, f"https://my.matterport.com/{asset}", local_file    )
+            executor.submit(downloadFile, "MODEL_INFO", True, f"https://my.matterport.com/{asset}", local_file )
     makeDirs("api/mp/models")
     with open(f"api/mp/models/graph", "w", encoding="UTF-8") as f:
         f.write('{"data": "empty"}')
-    for i in range(1,4):
-        downloadFile(f"https://my.matterport.com/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
+    for i in range(1,4): #file to url mapping
+        downloadFile("FILE_TO_URL_JSON",True,f"https://my.matterport.com/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
     setAccessURLs(pageid)
 
 def downloadPics(pageid):
@@ -227,7 +305,7 @@ def downloadPics(pageid):
         modeldata = json.load(f)
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for image in modeldata["images"]:
-            executor.submit(downloadFile, image["src"], urlparse(image["src"]).path[1:])
+            executor.submit(downloadFile, "MODEL_IMAGES", True, image["src"], urlparse(image["src"]).path[1:])
 
 def downloadModel(pageid,accessurl):
     global ADVANCED_DOWNLOAD_ALL
@@ -292,7 +370,7 @@ def downloadPage(pageid):
         ]
 
     try:
-        logging.basicConfig(filename='run_report.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+        logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S',  encoding='utf-8')
     except ValueError:
         logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
     logging.debug(f'Started up a download run')
@@ -328,7 +406,7 @@ def downloadPage(pageid):
                 base_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]["assets"]
                 for mesh in base_node["meshes"]:
                     try:
-                        downloadFile(mesh["url"], urlparse(mesh["url"]).path[1:])#not expecting the non 50k one to work but mgiht as well try
+                        downloadFile("ADV_MODEL_MESH","50k" not in mesh["url"],mesh["url"], urlparse(mesh["url"]).path[1:])#not expecting the non 50k one to work but mgiht as well try
                     except:
                         pass
                 for texture in base_node["textures"]:
@@ -350,11 +428,12 @@ def downloadPage(pageid):
                                         complete_add=f'{crop["start"]}x{xs},y{ys}'
                                         complete_add_file = complete_add.replace("&","_")
                                         try:
-                                            downloadFile(full_text_url + "&" + complete_add, urlparse(full_text_url).path[1:] + complete_add_file + ".jpg")
+                                            
+                                            downloadFile("ADV_TEXTURE_CROPPED", False, full_text_url + "&" + complete_add, urlparse(full_text_url).path[1:] + complete_add_file + ".jpg") #failures here ok we dont know all teh crops that d exist
                                         except:
                                             pass
 
-                            downloadFile(full_text_url, urlparse(full_text_url).path[1:])
+                            downloadFile("ADV_TEXTURE_FULL", True, full_text_url, urlparse(full_text_url).path[1:])
                     except:
                         pass
         except:
@@ -470,6 +549,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
 PROXY=False
 ADVANCED_DOWNLOAD_ALL=False
+BRUTE_JS_DOWNLOAD=False
 
 GRAPH_DATA_REQ = {}
 
@@ -500,7 +580,9 @@ def getCommandLineArg(name, has_value):
 
 if __name__ == "__main__":
     ADVANCED_DOWNLOAD_ALL = getCommandLineArg("--advanced-download", False)
+    BRUTE_JS_DOWNLOAD = getCommandLineArg("--brute-js", False)
     PROXY = getCommandLineArg("--proxy", True)
+
     OUR_OPENER = getUrlOpener(PROXY)
     urllib.request.install_opener(OUR_OPENER)
     pageId = ""
@@ -520,4 +602,4 @@ if __name__ == "__main__":
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         httpd.serve_forever()
     else:
-        print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support")
+        print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support\n\t--brute-js -- Use this option to ry and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)")
