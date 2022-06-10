@@ -395,6 +395,16 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             logging.warning(f'404 error: {self.path} may not be downloading everything right')
         SimpleHTTPRequestHandler.send_error(self, code, message)
 
+    def end_headers(self):
+        self.send_my_headers()
+        SimpleHTTPServer.SimpleHTTPRequestHandler.end_headers(self)
+
+    def send_my_headers(self):
+        if ".js" in self.path or ".json" in self.path or ".html" in self.path:
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+
     def do_GET(self):
         global SHOWCASE_INTERNAL_NAME
         redirect_msg=None
@@ -426,13 +436,23 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 redirect_msg = "dollhouse/floorplan texture request that we have downloaded, better than generic texture file"
         if redirect_msg is not None or orig_request != self.path:
             logging.info(f'Redirecting {orig_request} => {self.path} as {redirect_msg}')
-
+        pathNoExtension=""
+        if self.path.endswith(".js"):
+            pathNoExtension = self.path[:-3]
+        if self.path.endswith(".json"):
+            pathNoExtension = self.path[:-5]
+        if pathNoExtension != "":
+            posFile = pathNoExtension + ".nice.js"
+            if os.path.exists(f".{posFile}"):
+                self.path = posFile
+                logging.info(f'Redirecting {orig_request} => {self.path} as .nice.js file exists')
 
 
         SimpleHTTPRequestHandler.do_GET(self)
         return;
     def do_POST(self):
         post_msg=None
+        logLevel = logging.INFO
         try:
             if self.path == "/api/mp/models/graph":
                 self.send_response(200)
@@ -449,16 +469,18 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                             post_msg=f"graph of operationName: {option_name} we are handling internally"
                             return;
                     else:
-                        post_msg=f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead"
+                        logLevel = logging.WARNING
+                        post_msg=f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead. If you get an error this may be why (include this message in bug report)."
 
                 self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
                 return
         except Exception as error:
+            logLevel = logging.ERROR
             post_msg = f"Error trying to handle a post request of: {str(error)} this should not happen"
             pass
         finally:
             if post_msg is not None:
-                logging.info(f'Handling a post request on {self.path}: {post_msg}')
+                logging.log(logLevel,f'Handling a post request on {self.path}: {post_msg}')
 
         self.do_GET() #just treat the POST as a get otherwise:)
 
