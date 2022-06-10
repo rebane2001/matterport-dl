@@ -90,9 +90,11 @@ def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
 
 
 def downloadFile(url, file, post_data=None):
-    global accessurls
+    global accessurls, NO_TILDA_IN_PATH
     url = GetOrReplaceKey(url,False)
 
+    if NO_TILDA_IN_PATH:
+        file = file.replace("~","_")
     if "/" in file:
         makeDirs(os.path.dirname(file))
     if "?" in file:
@@ -396,9 +398,12 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         SimpleHTTPRequestHandler.send_error(self, code, message)
 
     def do_GET(self):
-        global SHOWCASE_INTERNAL_NAME
+        global SHOWCASE_INTERNAL_NAME, NO_TILDA_IN_PATH
         redirect_msg=None
         orig_request = self.path
+        if NO_TILDA_IN_PATH:
+            self.path = self.path.replace("~","_")
+
         if self.path.startswith("/js/showcase.js") and os.path.exists(f"js/{SHOWCASE_INTERNAL_NAME}"):
             redirect_msg = "using our internal showcase.js file"
             self.path = f"/js/{SHOWCASE_INTERNAL_NAME}"
@@ -470,7 +475,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
 PROXY=False
 ADVANCED_DOWNLOAD_ALL=False
-
+NO_TILDA_IN_PATH = False
 GRAPH_DATA_REQ = {}
 
 def openDirReadGraphReqs(path,pageId):
@@ -499,6 +504,7 @@ def getCommandLineArg(name, has_value):
     return False
 
 if __name__ == "__main__":
+    NO_TILDA_IN_PATH = getCommandLineArg("--no-tilda", False)
     ADVANCED_DOWNLOAD_ALL = getCommandLineArg("--advanced-download", False)
     PROXY = getCommandLineArg("--proxy", True)
     OUR_OPENER = getUrlOpener(PROXY)
@@ -520,4 +526,4 @@ if __name__ == "__main__":
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         httpd.serve_forever()
     else:
-        print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support")
+        print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support\n\t--no-tilda -- Use this option to remove the tilda from file paths (say for linux)")
