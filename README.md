@@ -14,6 +14,33 @@ A tool to download/archive [Matterport](https://matterport.com) virtual tours.  
 -   Add `--proxy 127.0.0.1:1234` to a download run to use a proxy for requests
 -   Add `--advanced-download` to a download run to try and download the needed textures and files for supporting dollhouse/floorplan views.  NOTE: Must use built in webserver to host content for this to work.
 
+# Docker
+## Docker params
+```
+docker build -t matterport-dl .
+docker run -v $(pwd)/clones:/matterport-dl/clones -e M_ID=[url_or_page_id] matterport-dl
+docker run -p 8080:8080 -v $(pwd)/clones:/matterport-dl/clones -e M_ID=[url_or_page_id] -e BIND_IP=0.0.0.0 -e BIND_PORT=8080 -e ADV_DL=true -e PROXY=127.0.0.1:1234 -e BASE_FOLDER="./clones" matterport-dl
+```
+
+* M_ID Matterport ID or URL
+* BIND_PORT Defaults to 8080 if not set
+* BIND_IP IP address to bind to. Use `0.0.0.0` unless setting docker network to host.
+* ADV_DL is for the --advanced-download flag, and is off by default. Setting this to anything will activate it.
+* PROXY is for the --proxy flag, and is off by default.
+* BASE_FOLDER is where the downloads go. Defaults to "./clones"
+
+## Docker example
+```
+docker build -t matterport-dl .
+docker run -v $(pwd)/clones:/matterport-dl/clones -e M_ID="https://my.matterport.com/show/?m=roWLLMMmPL8" -e ADV_DL=true matterport-dl
+docker run -p 8080:8080 -v $(pwd)/clones:/matterport-dl/clones -e M_ID=roWLLMMmPL8 -e BIND_IP=0.0.0.0 -d matterport-dl
+```
+
+## Docker debugging
+```
+docker build --no-cache -t matterport-dl .
+docker run -t -i -p 8080:8080 -v $(pwd)/clones:/matterport-dl/clones -e M_ID=roWLLMMmPL8 -e BIND_IP=0.0.0.0 matterport-dl /bin/bash
+```
 
 # Additional Notes
 * It is possible to host these Matterport archives using standard web servers however: 1) Certain features beyond the tour itself may not work.  2)  #1 may be fixable by specific rewrite rules for apache/nginx.  These are not currently provided but if you look at `OurSimpleHTTPRequestHandler` class near the bottom of the source file you can likely figure out what redirects we do.
