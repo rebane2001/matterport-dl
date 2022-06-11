@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 if [[ -z "${BIND_PORT}" ]] && [[ -n "$BIND_IP" ]]; then
