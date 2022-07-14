@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+
 '''
 Downloads virtual tours from matterport.
 Usage is either running this program with the URL/pageid as an argument or calling the initiateDownload(URL/pageid) method.
 '''
+
 import uuid
 import requests
 import json
@@ -20,6 +22,7 @@ import logging
 from tqdm import tqdm
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import decimal
+
 
 # Weird hack
 accessurls = []
@@ -229,12 +232,8 @@ def setAccessURLs(pageid):
 
 
 def downloadInfo(pageid):
-<<<<<<< Updated upstream
-    assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v1/player/models/{pageid}/", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files"]
-=======
     assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}",
         f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v1/player/models/{pageid}/", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files", f"api/v1/jsonstore/model/trims/{pageid}"]
->>>>>>> Stashed changes
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for asset in assets:
             local_file = asset
@@ -270,18 +269,6 @@ def downloadModel(pageid, accessurl):
     os.chdir(f"models/{accessid}")
     downloadUUID(accessurl, modeldata["job"]["uuid"])
     downloadSweeps(accessurl, modeldata["sweeps"])
-
-
-def progressbar(it, prefix="", size=60, out=sys.stdout): # Python3.6+
-    count = len(it)
-    def show(j):
-        x = int(size*j/count)
-        print(f"{prefix}[{u'█'*x}{('.'*(size-x))}] {j}/{count}", end='\r', file=out, flush=True)
-    show(0)
-    for i, item in enumerate(it):
-        yield item
-        show(i+1)
-    print("\n", flush=True, file=out) 
 
 
 # Patch showcase.js to fix expiration issue
@@ -455,18 +442,12 @@ def downloadPage(pageid):
 
         
     # Automatic redirect if GET param isn't correct
-<<<<<<< Updated upstream
-    injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; }'
-    content = r.text.replace(staticbase,".").replace('"https://cdn-1.matterport.com/','`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/','`${window.location.origin}${window.location.pathname}` + "').replace("window.MP_PREFETCHED_MODELDATA",f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
-    content = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T","validUntil\":\"2099-01-01T",content)
-=======
     injectedjs = 'if (window.location.search != "?m=' + pageid + \
                       '") { document.location.search = "?m=' + pageid + '"; }'
     content = r.text.replace(staticbase, ".").replace('"https://cdn-1.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/', '`${window.location.origin}${window.location.pathname}` + "').replace(
         "window.MP_PREFETCHED_MODELDATA", f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
     content = re.sub(
         r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", content)
->>>>>>> Stashed changes
     with open("index.html", "w", encoding="UTF-8") as f:
         f.write(content)
 
