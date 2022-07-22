@@ -158,7 +158,7 @@ def downloadGraphModels(pageid):
 def downloadAssets(base):
     js_files = ["browser-check",
         "30", "46", "47", "66", "79", "134", "136", "143", "164", "250", "251", "316", "321", "356", "371", "376", "383", "386", "422", "423",
-        "464", "524", "525", "539", "580", "584", "606", "614", "666", "670", "718", "721", "726", "755", "764", "828", "833", "838", "932", "947", "300", "309", "393", "521", "564", "633", "674", "769", "856", "934"]
+        "464", "524", "525", "539", "580", "584", "606", "614", "666", "670", "718", "721", "726", "755", "764", "828", "833", "838", "932", "947", "300", "309", "393", "521", "564", "633", "674", "769", "856", "934", "207","260","385","58","794","976","995"]
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
                       "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
                       "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
@@ -186,10 +186,10 @@ def downloadAssets(base):
                    "nav_help_mouse_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left",
                    "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "NoteIcon", "pinAnchor",
                    "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask",
-                   "vert_arrows","headset-quest-2"]
+                   "vert_arrows","headset-quest-2","pinIconDefault"]
 
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
-              "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css"]
+              "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css"]
     downloadFile("https://my.matterport.com/favicon.ico", "favicon.ico")
     downloadFile(base + "js/showcase.js", "js/showcase.js")
     with open(f"js/showcase.js", "r", encoding="UTF-8") as f:
