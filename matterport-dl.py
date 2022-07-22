@@ -5,6 +5,7 @@ Downloads virtual tours from matterport.
 Usage is either running this program with the URL/pageid as an argument or calling the initiateDownload(URL/pageid) method.
 '''
 
+import uuid
 import requests
 import json
 import threading
@@ -23,13 +24,13 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 import decimal
 
 
-
 # Weird hack
 accessurls = []
 SHOWCASE_INTERNAL_NAME = "showcase-internal.js"
 
 def makeDirs(dirname):
     pathlib.Path(dirname).mkdir(parents=True, exist_ok=True)
+
 
 def getVariants():
     variants = []
@@ -42,19 +43,27 @@ def getVariants():
                     variants.append(f"{z}_face{face}_{x}_{y}.jpg")
     return variants
 
+
 def downloadUUID(accessurl, uuid):
-    downloadFile(accessurl.format(filename=f'{uuid}_50k.dam'), f'{uuid}_50k.dam')
+    downloadFile(accessurl.format(
+        filename=f'{uuid}_50k.dam'), f'{uuid}_50k.dam')
     shutil.copy(f'{uuid}_50k.dam', f'..{os.path.sep}{uuid}_50k.dam')
-    cur_file=""
+    cur_file = ""
     try:
         for i in range(1000):
-            cur_file=accessurl.format(filename=f'{uuid}_50k_texture_jpg_high/{uuid}_50k_{i:03d}.jpg')
-            downloadFile(cur_file, f'{uuid}_50k_texture_jpg_high/{uuid}_50k_{i:03d}.jpg')
-            cur_file=accessurl.format(filename=f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
-            downloadFile(cur_file, f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
+            cur_file = accessurl.format(
+                filename=f'{uuid}_50k_texture_jpg_high/{uuid}_50k_{i:03d}.jpg')
+            downloadFile(
+                cur_file, f'{uuid}_50k_texture_jpg_high/{uuid}_50k_{i:03d}.jpg')
+            cur_file = accessurl.format(
+                filename=f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
+            downloadFile(
+                cur_file, f'{uuid}_50k_texture_jpg_low/{uuid}_50k_{i:03d}.jpg')
     except Exception as ex:
-        logging.warning(f'Exception downloading file: {cur_file} of: {str(ex)}')
-        pass #very lazy and bad way to only download required files
+        logging.warning(
+            f'Exception downloading file: {cur_file} of: {str(ex)}')
+        pass  # very lazy and bad way to only download required files
+
 
 def downloadSweeps(accessurl, sweeps):
     with tqdm(total=(len(sweeps)*len(getVariants()))) as pbar:
@@ -62,67 +71,79 @@ def downloadSweeps(accessurl, sweeps):
             for sweep in sweeps:
                 for variant in getVariants():
                     pbar.update(1)
-                    executor.submit(downloadFile, accessurl.format(filename=f'tiles/{sweep}/{variant}') + "&imageopt=1", f'tiles/{sweep}/{variant}')
+                    executor.submit(downloadFile, accessurl.format(
+                        filename=f'tiles/{sweep}/{variant}') + "&imageopt=1", f'tiles/{sweep}/{variant}')
                     while executor._work_queue.qsize() > 64:
                         time.sleep(0.01)
+
 
 def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
     global PROXY
     if "/" in file:
         makeDirs(os.path.dirname(file))
-    if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
-        logging.debug(f'Skipping json post to url: {url} ({descriptor}) as already downloaded')
+    # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
+    if os.path.exists(file):
+        logging.debug(
+            f'Skipping json post to url: {url} ({descriptor}) as already downloaded')
 
     opener = getUrlOpener(PROXY)
-    opener.addheaders.append(('Content-Type','application/json'))
+    opener.addheaders.append(('Content-Type', 'application/json'))
 
     req = urllib.request.Request(url)
 
-    for header in opener.addheaders: #not sure why we can't use the opener itself but it doesn't override it properly
-        req.add_header(header[0],header[1])
+    for header in opener.addheaders:  # not sure why we can't use the opener itself but it doesn't override it properly
+        req.add_header(header[0], header[1])
 
     body_bytes = bytes(post_json_str, "utf-8")
     req.add_header('Content-Length', len(body_bytes))
     resp = urllib.request.urlopen(req, body_bytes)
     with open(file, 'w', encoding="UTF-8") as the_file:
         the_file.write(resp.read().decode("UTF-8"))
-    logging.debug(f'Successfully downloaded w/ JSON post to: {url} ({descriptor}) to: {file}')
+    logging.debug(
+        f'Successfully downloaded w/ JSON post to: {url} ({descriptor}) to: {file}')
 
 
 def downloadFile(url, file, post_data=None):
     global accessurls
-    url = GetOrReplaceKey(url,False)
+    url = GetOrReplaceKey(url, False)
 
     if "/" in file:
         makeDirs(os.path.dirname(file))
     if "?" in file:
         file = file.split('?')[0]
 
-    if os.path.exists(file): #skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+    # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+    if os.path.exists(file):
         logging.debug(f'Skipping url: {url} as already downloaded')
         return
     try:
-        _filename,headers = urllib.request.urlretrieve(url, file,None,post_data)
+        _filename, headers = urllib.request.urlretrieve(
+            url, file, None, post_data)
         logging.debug(f'Successfully downloaded: {url} to: {file}')
         return
     except urllib.error.HTTPError as err:
-        logging.warning(f'URL error dling {url} of will try alt: {str(err)}')
+        logging.warning(
+            f'URL error Handling {url} of will try alt: {str(err)}')
 
         # Try again but with different accessurls (very hacky!)
         if "?t=" in url:
             for accessurl in accessurls:
-                url2=""
+                url2 = ""
                 try:
-                    url2=f"{url.split('?')[0]}?{accessurl}"
+                    url2 = f"{url.split('?')[0]}?{accessurl}"
                     urllib.request.urlretrieve(url2, file)
-                    logging.debug(f'Successfully downloaded through alt: {url2} to: {file}')
+                    logging.debug(
+                        f'Successfully downloaded through alt: {url2} to: {file}')
                     return
                 except urllib.error.HTTPError as err:
-                    logging.warning(f'URL error alt method tried url {url2} dling of: {str(err)}')
+                    logging.warning(
+                        f'URL error alt method tried url {url2} Handling of: {str(err)}')
                     pass
         logging.error(f'Failed to succeed for url {url}')
         raise Exception
-    logging.error(f'Failed2 to succeed for url {url}')#hopefully not getting here?
+        # hopefully not getting here?
+        logging.error(f'Failed2 to succeed for url {url}')
+
 
 def downloadGraphModels(pageid):
     global GRAPH_DATA_REQ
@@ -130,56 +151,57 @@ def downloadGraphModels(pageid):
 
     for key in GRAPH_DATA_REQ:
         file_path = f"api/mp/models/graph_{key}.json"
-        downloadFileWithJSONPost("https://my.matterport.com/api/mp/models/graph",file_path, GRAPH_DATA_REQ[key], key)
+        downloadFileWithJSONPost(
+            "https://my.matterport.com/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key)
 
 
 def downloadAssets(base):
     js_files = ["browser-check",
-        "30","46","47","66","79","134","136","143","164","250","251","316","321","356","371","376","383","386","422","423",
-        "464","524","525","539","580","584","606","614","666","670","718","721","726","755","764","828","833","838","932","947"]
+        "30", "46", "47", "66", "79", "134", "136", "143", "164", "250", "251", "316", "321", "356", "371", "376", "383", "386", "422", "423",
+        "464", "524", "525", "539", "580", "584", "606", "614", "666", "670", "718", "721", "726", "755", "764", "828", "833", "838", "932", "947", "300", "309", "393", "521", "564", "633", "674", "769", "856", "934", "207","260","385","58","794","976","995"]
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
-     "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
-     "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
-     "en-US", "en-EG", "en-AU", "en-GB", "en-CA", "en-NZ", "en-IE", "en-ZA", "en-JM",
-     "en-BZ", "en-TT", "et", "fo", "fa", "fi", "fr", "fr-BE", "fr-CA", "fr-CH", "fr-LU",
-     "gd", "gd-IE", "de", "de-CH", "de-AT", "de-LU", "de-LI", "el", "he", "hi", "hu",
-     "is", "id", "it", "it-CH", "ja", "ko", "lv", "lt", "mk", "mt", "no", "pl",
-     "pt-BR", "pt", "rm", "ro", "ro-MO", "ru", "ru-MI", "sz", "sr", "sk", "sl", "sb",
-     "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO",
-     "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI",
-     "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh",
-     "ji", "zu"]
+                      "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
+                      "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en",
+                      "en-US", "en-EG", "en-AU", "en-GB", "en-CA", "en-NZ", "en-IE", "en-ZA", "en-JM",
+                      "en-BZ", "en-TT", "et", "fo", "fa", "fi", "fr", "fr-BE", "fr-CA", "fr-CH", "fr-LU",
+                      "gd", "gd-IE", "de", "de-CH", "de-AT", "de-LU", "de-LI", "el", "he", "hi", "hu",
+                      "is", "id", "it", "it-CH", "ja", "ko", "lv", "lt", "mk", "mt", "no", "pl",
+                      "pt-BR", "pt", "rm", "ro", "ro-MO", "ru", "ru-MI", "sz", "sr", "sk", "sl", "sb",
+                      "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO",
+                      "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI",
+                      "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh",
+                      "ji", "zu"]
     font_files = ["ibm-plex-sans-100", "ibm-plex-sans-100italic", "ibm-plex-sans-200", "ibm-plex-sans-200italic", "ibm-plex-sans-300",
-    "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic",
-    "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic",
-    "roboto-300", "roboto-300italic", "roboto-500", "roboto-500italic", "roboto-700", "roboto-700italic", "roboto-900", "roboto-900italic",
-    "roboto-italic", "roboto-regular"]
+                  "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic",
+                  "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic",
+                  "roboto-300", "roboto-300italic", "roboto-500", "roboto-500italic", "roboto-700", "roboto-700italic", "roboto-900", "roboto-900italic",
+                  "roboto-italic", "roboto-regular"]
 
-    #extension assumed to be .png unless it is .svg or .jpg, for anything else place it in assets
-    image_files = ["360_placement_pin_maskH", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior",
-    "exterior_hover", "firefox", "headset-cardboard", "headset-quest", "interior", "interior_hover", "matterport-logo-light.svg",
-    "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag",
-    "nav_help_gesture_drag_two_finger", "nav_help_gesture_pinch", "nav_help_gesture_position", "nav_help_gesture_position_two_finger",
-    "nav_help_gesture_tap", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down",
-    "nav_help_mouse_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left",
-    "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "NoteIcon", "pinAnchor",
-    "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask",
-    "vert_arrows"]
+    # extension assumed to be .png unless it is .svg or .jpg, for anything else place it in assets
+    image_files = ["360_placement_pin_mask", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior",
+                   "exterior_hover", "firefox", "headset-cardboard", "headset-quest", "interior", "interior_hover", "matterport-logo-light.svg",
+                   "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag",
+                   "nav_help_gesture_drag_two_finger", "nav_help_gesture_pinch", "nav_help_gesture_position", "nav_help_gesture_position_two_finger",
+                   "nav_help_gesture_tap", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down",
+                   "nav_help_mouse_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left",
+                   "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "NoteIcon", "pinAnchor",
+                   "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask",
+                   "vert_arrows","headset-quest-2","pinIconDefault"]
 
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
-    "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css"]
-
-    downloadFile(base + "js/showcase.js","js/showcase.js")
+              "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css"]
+    downloadFile("https://my.matterport.com/favicon.ico", "favicon.ico")
+    downloadFile(base + "js/showcase.js", "js/showcase.js")
     with open(f"js/showcase.js", "r", encoding="UTF-8") as f:
-	    showcase_cont = f.read()
-    #lets try to extract the js files it might be loading and make sure we know them
+        showcase_cont = f.read()
+    # lets try to extract the js files it might be loading and make sure we know them
     js_extracted = re.findall(r'\.e\(([0-9]{2,3})\)', showcase_cont)
     js_extracted.sort()
     for js in js_extracted:
         if js not in js_files:
-            print(f'JS FILE EXTRACTED BUT not known, please file a github issue and tell us to add: {js}.js, will download for you though:)')
+            print(
+                f'JS FILE EXTRACTED BUT not known, please file a github issue and tell us to add: {js}.js, will download for you though:)')
             js_files.append(js)
-    
 
     for image in image_files:
         if not image.endswith(".jpg") and not image.endswith(".svg"):
@@ -195,8 +217,9 @@ def downloadAssets(base):
         for asset in assets:
             local_file = asset
             if local_file.endswith('/'):
-                local_file = local_file    + "index.html"
+                local_file = local_file + "index.html"
             executor.submit(downloadFile, f"{base}{asset}", local_file)
+
 
 def setAccessURLs(pageid):
     global accessurls
@@ -207,64 +230,93 @@ def setAccessURLs(pageid):
         filejson = json.load(f)
         accessurls.append(filejson["templates"][0].split("?")[-1])
 
+
 def downloadInfo(pageid):
-    assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v1/player/models/{pageid}/", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files"]
+    assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}",
+        f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v1/player/models/{pageid}/", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files", f"api/v1/jsonstore/model/trims/{pageid}"]
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for asset in assets:
             local_file = asset
             if local_file.endswith('/'):
-                local_file = local_file    + "index.html"
-            executor.submit(downloadFile, f"https://my.matterport.com/{asset}", local_file    )
+                local_file = local_file + "index.html"
+            executor.submit(
+                downloadFile, f"https://my.matterport.com/{asset}", local_file)
     makeDirs("api/mp/models")
     with open(f"api/mp/models/graph", "w", encoding="UTF-8") as f:
         f.write('{"data": "empty"}')
-    for i in range(1,4):
-        downloadFile(f"https://my.matterport.com/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
+    for i in range(1, 4):
+        downloadFile(
+            f"https://my.matterport.com/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
     setAccessURLs(pageid)
+
 
 def downloadPics(pageid):
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for image in modeldata["images"]:
-            executor.submit(downloadFile, image["src"], urlparse(image["src"]).path[1:])
+            executor.submit(downloadFile, image["src"], urlparse(
+                image["src"]).path[1:])
 
-def downloadModel(pageid,accessurl):
+
+def downloadModel(pageid, accessurl):
     global ADVANCED_DOWNLOAD_ALL
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
-    accessid = re.search(r'models/([a-z0-9-_./~]*)/\{filename\}', accessurl).group(1)
+    accessid = re.search(
+        r'models/([a-z0-9-_./~]*)/\{filename\}', accessurl).group(1)
     makeDirs(f"models/{accessid}")
     os.chdir(f"models/{accessid}")
-    downloadUUID(accessurl,modeldata["job"]["uuid"])
+    downloadUUID(accessurl, modeldata["job"]["uuid"])
     downloadSweeps(accessurl, modeldata["sweeps"])
 
 
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
     global SHOWCASE_INTERNAL_NAME
-    with open("js/showcase.js","r",encoding="UTF-8") as f:
+    with open("js/showcase.js", "r", encoding="UTF-8") as f:
         j = f.read()
-    j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)","",j)
-    j = j.replace(f'"/api/mp/','`${window.location.pathname}`+"api/mp/')
-    j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
-    j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
-    with open(f"js/{SHOWCASE_INTERNAL_NAME}","w",encoding="UTF-8") as f:
+    j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)
+    j = j.replace(f'"/api/mp/', '`${window.location.pathname}`+"api/mp/')
+    j = j.replace("${this.baseUrl}",
+                  "${window.location.origin}${window.location.pathname}")
+    j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:i.RequestPriority.LOW})',
+                  '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
+    with open(f"js/{SHOWCASE_INTERNAL_NAME}", "w", encoding="UTF-8") as f:
         f.write(j)
-    j = j.replace(f'"POST"','"GET"') #no post requests for external hosted
-    with open("js/showcase.js","w",encoding="UTF-8") as f:
+    j = j.replace(f'"POST"', '"GET"')  # no post requests for external hosted
+    with open("js/showcase.js", "w", encoding="UTF-8") as f:
         f.write(j)
+
+# Patch (graph_GetModelDetails.json & graph_GetSnapshots.json) URLs to Get files form local server instead of https://cdn-2.matterport.com/
+def patchGetModelDetails():
+    localServer = "http://127.0.0.1:8080"
+    with open("api/mp/models/graph_GetModelDetails.json", "r", encoding="UTF-8") as f:
+        j = f.read()
+    j = j.replace("https://cdn-2.matterport.com", localServer)
+    with open(f"api/mp/models/graph_GetModelDetails.json", "w", encoding="UTF-8") as f:
+        f.write(j)
+
+    with open("api/mp/models/graph_GetSnapshots.json", "r", encoding="UTF-8") as f:
+        j = f.read()
+    j = j.replace("https://cdn-2.matterport.com", localServer)
+    with open(f"api/mp/models/graph_GetSnapshots.json", "w", encoding="UTF-8") as f:
+        f.write(j)
+
 
 def drange(x, y, jump):
-  while x < y:
-    yield float(x)
-    x += decimal.Decimal(jump)
+    while x < y:
+        yield float(x)
+        x += decimal.Decimal(jump)
 
-KNOWN_ACCESS_KEY=None
+
+KNOWN_ACCESS_KEY = None
+
+
 def GetOrReplaceKey(url, is_read_key):
     global KNOWN_ACCESS_KEY
     key_regex = r'(t=2\-.+?\-0)'
-    match = re.search(key_regex,url)
+    match = re.search(key_regex, url)
     if match is None:
         return url
     url_key = match.group(1)
@@ -275,66 +327,89 @@ def GetOrReplaceKey(url, is_read_key):
     return url
 
 
+
 def downloadPage(pageid):
     global ADVANCED_DOWNLOAD_ALL
     makeDirs(pageid)
     os.chdir(pageid)
 
     ADV_CROP_FETCH = [
-            {
-                "start":"width=512&crop=1024,1024,",
-                "increment":'0.5'
+        {
+                "start": "width=512&crop=1024,1024,",
+                "increment": '0.5'
             },
-            {
-                "start":"crop=512,512,",
-               "increment":'0.25'
+        {
+                "start": "crop=512,512,",
+               "increment": '0.25'
             }
-        ]
+    ]
 
     try:
-        logging.basicConfig(filename='run_report.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+        logging.basicConfig(filename='run_report.log', encoding='utf-8', level=logging.DEBUG,
+                            format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     except ValueError:
-        logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+        logging.basicConfig(filename='run_report.log', level=logging.DEBUG,
+                            format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     logging.debug(f'Started up a download run')
     page_root_dir = os.path.abspath('.')
     print("Downloading base page...")
     r = requests.get(f"https://my.matterport.com/show/?m={pageid}")
     r.encoding = "utf-8"
-    staticbase = re.search(r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
-    match = re.search(r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', r.text)
+    staticbase = re.search(
+        r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
+    match = re.search(
+        r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', r.text)
     if match:
         accessurl = f'{match.group(1)}~/{{filename}}{match.group(3)}'
-        print(accessurl)
+        
     else:
         raise Exception("Can't find urls")
 
-
-    file_type_content = requests.get(f"https://my.matterport.com/api/player/models/{pageid}/files?type=3") #get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
-    GetOrReplaceKey(file_type_content.text,True)
+    # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
+    file_type_content = requests.get(
+        f"https://my.matterport.com/api/player/models/{pageid}/files?type=3")
+    GetOrReplaceKey(file_type_content.text, True)
     if ADVANCED_DOWNLOAD_ALL:
         print("Doing advanced download of dollhouse/floorplan data...")
-        ## Started to parse the modeldata further.  As it is error prone tried to try catch silently for failures. There is more data here we could use for example:
-        ## queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].tileUrlTemplate
-        ## queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
-        ## queries.GetModelPrefetch.data.model.locations[X].pano.resolutions[Y] <--- has the resolutions they offer for this one
-        ## goal here is to move away from some of the access url hacks, but if we are successful on try one won't matter:)
-
+        # Started to parse the modeldata further.  As it is error prone tried to try catch silently for failures. There is more data here we could use for example:
+        # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].tileUrlTemplate
+        # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
+        # queries.GetModelPrefetch.data.model.locations[X].pano.resolutions[Y] <--- has the resolutions they offer for this one
+        # goal here is to move away from some of the access url hacks, but if we are successful on try one won't matter:)
 
         try:
-            match = re.search(r'window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});', r.text)
+            match = re.search(
+                r'window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});', r.text)
             if match:
                 preload_json = json.loads(match.group(1))
-                #download dam files
+
+                # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
+                base_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
+                for urlTemplates in base_node["locations"]:
+                    try:
+                        for face in range(6):
+                        
+                            full_urlTemplate = urlTemplates["pano"]["skyboxes"][0]["urlTemplate"].replace("<face>", f'{face}')
+                            downloadFile(full_urlTemplate, urlparse(
+                            full_urlTemplate).path[1:])
+  
+                    except: 
+                        pass
+
+                # download dam files
                 base_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]["assets"]
                 for mesh in base_node["meshes"]:
                     try:
-                        downloadFile(mesh["url"], urlparse(mesh["url"]).path[1:])#not expecting the non 50k one to work but mgiht as well try
+                        # not expecting the non 50k one to work but might as well try
+                        downloadFile(mesh["url"], urlparse(
+                            mesh["url"]).path[1:])
                     except:
                         pass
                 for texture in base_node["textures"]:
-                    try: #on first exception assume we have all the ones needed
+                    try:  # on first exception assume we have all the ones needed
                         for i in range(1000):
-                            full_text_url = texture["urlTemplate"].replace("<texture>",f'{i:03d}')
+                            full_text_url = texture["urlTemplate"].replace(
+                                "<texture>", f'{i:03d}')
                             crop_to_do = []
                             if texture["quality"] == "high":
                                 crop_to_do = ADV_CROP_FETCH
@@ -347,28 +422,39 @@ def downloadPage(pageid):
                                             xs = xs[:-2]
                                         if ys.endswith('.0'):
                                             ys = ys[:-2]
-                                        complete_add=f'{crop["start"]}x{xs},y{ys}'
-                                        complete_add_file = complete_add.replace("&","_")
+                                        complete_add = f'{crop["start"]}x{xs},y{ys}'
+                                        complete_add_file = complete_add.replace(
+                                            "&", "_")
                                         try:
-                                            downloadFile(full_text_url + "&" + complete_add, urlparse(full_text_url).path[1:] + complete_add_file + ".jpg")
+                                            downloadFile(full_text_url + "&" + complete_add, urlparse(
+                                                full_text_url).path[1:] + complete_add_file + ".jpg")
                                         except:
                                             pass
 
-                            downloadFile(full_text_url, urlparse(full_text_url).path[1:])
+                            downloadFile(full_text_url, urlparse(
+                                full_text_url).path[1:])
                     except:
                         pass
         except:
             pass
+
+
+
+        
     # Automatic redirect if GET param isn't correct
-    injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; }'
-    content = r.text.replace(staticbase,".").replace('"https://cdn-1.matterport.com/','`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/','`${window.location.origin}${window.location.pathname}` + "').replace("window.MP_PREFETCHED_MODELDATA",f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
-    content = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T","validUntil\":\"2099-01-01T",content)
+    injectedjs = 'if (window.location.search != "?m=' + pageid + \
+                      '") { document.location.search = "?m=' + pageid + '"; }'
+    content = r.text.replace(staticbase, ".").replace('"https://cdn-1.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/', '`${window.location.origin}${window.location.pathname}` + "').replace(
+        "window.MP_PREFETCHED_MODELDATA", f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
+    content = re.sub(
+        r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", content)
     with open("index.html", "w", encoding="UTF-8") as f:
-        f.write(content )
+        f.write(content)
+
 
     print("Downloading static assets...")
-    if os.path.exists("js/showcase.js"): #we want to always fetch showcase.js in case we patch it differently or the patching function starts to not work well run multiple times on itself
-        os.replace("js/showcase.js","js/showcase-bk.js") #backing up existing showcase file to be safe
+    if os.path.exists("js/showcase.js"):  # we want to always fetch showcase.js in case we patch it differently or the patching function starts to not work well run multiple times on itself
+        os.replace("js/showcase.js", "js/showcase-bk.js") #backing up existing showcase file to be safe
     downloadAssets(staticbase)
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
@@ -378,27 +464,38 @@ def downloadPage(pageid):
     downloadPics(pageid)
     print("Downloading graph model data...")
     downloadGraphModels(pageid)
-    print(f"Downloading model... access url: {accessurl}")
-    downloadModel(pageid,accessurl)
+    print(f"Patching graph_GetModelDetails.json URLs")
+    patchGetModelDetails()
+    print(f"Downloading model ID: {pageid} ...")
+    downloadModel(pageid, accessurl)
     os.chdir(page_root_dir)
     open("api/v1/event", 'a').close()
     print("Done!")
 
+
+
 def initiateDownload(url):
     downloadPage(getPageId(url))
+
+
 def getPageId(url):
     return url.split("m=")[-1].split("&")[0]
+
+
 
 class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
     def send_error(self, code, message=None):
         if code == 404:
-            logging.warning(f'404 error: {self.path} may not be downloading everything right')
+            logging.warning(
+                f'404 error: {self.path} may not be downloading everything right')
         SimpleHTTPRequestHandler.send_error(self, code, message)
+
 
     def do_GET(self):
         global SHOWCASE_INTERNAL_NAME
-        redirect_msg=None
+        redirect_msg = None
         orig_request = self.path
+
         if self.path.startswith("/js/showcase.js") and os.path.exists(f"js/{SHOWCASE_INTERNAL_NAME}"):
             redirect_msg = "using our internal showcase.js file"
             self.path = f"/js/{SHOWCASE_INTERNAL_NAME}"
@@ -425,14 +522,15 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 self.path = test_path
                 redirect_msg = "dollhouse/floorplan texture request that we have downloaded, better than generic texture file"
         if redirect_msg is not None or orig_request != self.path:
-            logging.info(f'Redirecting {orig_request} => {self.path} as {redirect_msg}')
-
+            logging.info(
+                f'Redirecting {orig_request} => {self.path} as {redirect_msg}')
 
 
         SimpleHTTPRequestHandler.do_GET(self)
-        return;
+        return
+
     def do_POST(self):
-        post_msg=None
+        post_msg = None
         try:
             if self.path == "/api/mp/models/graph":
                 self.send_response(200)
@@ -446,10 +544,10 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                     if os.path.exists(file_path):
                         with open(file_path, "r", encoding="UTF-8") as f:
                             self.wfile.write(f.read().encode('utf-8'))
-                            post_msg=f"graph of operationName: {option_name} we are handling internally"
-                            return;
+                            post_msg = f"graph of operationName: {option_name} we are handling internally"
+                            return
                     else:
-                        post_msg=f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead"
+                        post_msg = f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead"
 
                 self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
                 return
@@ -458,9 +556,10 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             pass
         finally:
             if post_msg is not None:
-                logging.info(f'Handling a post request on {self.path}: {post_msg}')
+                logging.info(
+                    f'Handling a post request on {self.path}: {post_msg}')
 
-        self.do_GET() #just treat the POST as a get otherwise:)
+        self.do_GET()  # just treat the POST as a get otherwise:)
 
     def guess_type(self, path):
         res = SimpleHTTPRequestHandler.guess_type(self, path)
@@ -468,28 +567,30 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             return "text/html; charset=UTF-8"
         return res
 
-PROXY=False
-ADVANCED_DOWNLOAD_ALL=False
+PROXY = False
+ADVANCED_DOWNLOAD_ALL = False
 
 GRAPH_DATA_REQ = {}
 
-def openDirReadGraphReqs(path,pageId):
+def openDirReadGraphReqs(path, pageId):
     for root, dirs, filenames in os.walk(path):
         for file in filenames:
             with open(os.path.join(root, file), "r", encoding="UTF-8") as f:
-                GRAPH_DATA_REQ[file.replace(".json","")] = f.read().replace("[MATTERPORT_MODEL_ID]",pageId)
+                GRAPH_DATA_REQ[file.replace(".json", "")] = f.read().replace("[MATTERPORT_MODEL_ID]",pageId)             
+
 
 def getUrlOpener(use_proxy):
     if (use_proxy):
-        proxy = urllib.request.ProxyHandler({'http': use_proxy,'https': use_proxy})
+        proxy = urllib.request.ProxyHandler({'http': use_proxy, 'https': use_proxy})
         opener = urllib.request.build_opener(proxy)
     else:
         opener = urllib.request.build_opener()
-    opener.addheaders = [('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64)'),('x-matterport-application-name','showcase')]
+    opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'),('x-matterport-application-name','showcase')]
     return opener
 
+
 def getCommandLineArg(name, has_value):
-    for i in range(1,len(sys.argv)):
+    for i in range(1, len(sys.argv)):
         if sys.argv[i] == name:
             sys.argv.pop(i)
             if has_value:
@@ -497,6 +598,7 @@ def getCommandLineArg(name, has_value):
             else:
                 return True
     return False
+
 
 if __name__ == "__main__":
     ADVANCED_DOWNLOAD_ALL = getCommandLineArg("--advanced-download", False)
@@ -506,18 +608,21 @@ if __name__ == "__main__":
     pageId = ""
     if len(sys.argv) > 1:
         pageId = getPageId(sys.argv[1])
-    openDirReadGraphReqs("graph_posts",pageId)
+    openDirReadGraphReqs("graph_posts", pageId)
     if len(sys.argv) == 2:
         initiateDownload(pageId)
     elif len(sys.argv) == 4:
         os.chdir(getPageId(pageId))
         try:
-            logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+            logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         except ValueError:
-            logging.basicConfig(filename='server.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
+            logging.basicConfig(filename='server.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         logging.info("Server started up")
-        print ("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
-        httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
+
+
+        print("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
+        httpd = HTTPServer(
+            (sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         httpd.serve_forever()
     else:
-        print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support")
+        print(f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support")
