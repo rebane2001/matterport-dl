@@ -389,7 +389,12 @@ def downloadPage(pageid):
                     try:
                         for face in range(6):
                         
+                            #high
                             full_urlTemplate = urlTemplates["pano"]["skyboxes"][0]["urlTemplate"].replace("<face>", f'{face}')
+                            downloadFile(full_urlTemplate, urlparse(
+                            full_urlTemplate).path[1:])
+                            #low   
+                            full_urlTemplate = urlTemplates["pano"]["skyboxes"][2]["urlTemplate"].replace("<face>", f'{face}')
                             downloadFile(full_urlTemplate, urlparse(
                             full_urlTemplate).path[1:])
   
