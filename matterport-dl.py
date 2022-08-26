@@ -385,21 +385,15 @@ def downloadPage(pageid):
 
                 # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
                 base_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
-                for urlTemplates in base_node["locations"]:
-                    try:
-                        for face in range(6):
-                        
-                            #high
-                            full_urlTemplate = urlTemplates["pano"]["skyboxes"][0]["urlTemplate"].replace("<face>", f'{face}')
-                            downloadFile(full_urlTemplate, urlparse(
-                            full_urlTemplate).path[1:])
-                            #low   
-                            full_urlTemplate = urlTemplates["pano"]["skyboxes"][2]["urlTemplate"].replace("<face>", f'{face}')
-                            downloadFile(full_urlTemplate, urlparse(
-                            full_urlTemplate).path[1:])
-  
-                    except: 
-                        pass
+                for location in base_node["locations"]:
+                        for skybox in location['pano']['skyboxes']:
+                            try:
+                                for face in range(6):
+                                
+                                    urlTemplate = skybox['urlTemplate'].replace("<face>", f'{face}')
+                                    downloadFile(urlTemplate, urlparse(urlTemplate).path[1:])
+                            except: 
+                                pass 
 
                 # download dam files
                 base_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]["assets"]
