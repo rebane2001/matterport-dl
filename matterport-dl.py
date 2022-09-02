@@ -186,7 +186,7 @@ def downloadAssets(base):
                    "nav_help_mouse_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left",
                    "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "NoteIcon", "pinAnchor",
                    "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask",
-                   "vert_arrows","headset-quest-2","pinIconDefault"]
+                   "vert_arrows","headset-quest-2","pinIconDefault","tagColor"]
 
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
               "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css"]
