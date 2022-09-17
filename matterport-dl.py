@@ -190,6 +190,7 @@ def downloadAssets(base):
 
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
               "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css"]
+              
     downloadFile("https://my.matterport.com/favicon.ico", "favicon.ico")
     downloadFile(base + "js/showcase.js", "js/showcase.js")
     with open(f"js/showcase.js", "r", encoding="UTF-8") as f:
@@ -220,6 +221,9 @@ def downloadAssets(base):
                 local_file = local_file + "index.html"
             executor.submit(downloadFile, f"{base}{asset}", local_file)
 
+def downloadWebglVendors(url):
+    path= url.replace('https://static.matterport.com/','')
+    downloadFile(url, path)
 
 def setAccessURLs(pageid):
     global accessurls
@@ -291,16 +295,25 @@ def patchShowcase():
 # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json) URLs to Get files form local server instead of https://cdn-2.matterport.com/
 def patchGetModelDetails():
     localServer = "http://127.0.0.1:8080"
-    with open("api/mp/models/graph_GetModelDetails.json", "r", encoding="UTF-8") as f:
+    with open(f"api/mp/models/graph_GetModelDetails.json", "r", encoding="UTF-8") as f:
         j = f.read()
     j = j.replace("https://cdn-2.matterport.com", localServer)
+    j = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
     with open(f"api/mp/models/graph_GetModelDetails.json", "w", encoding="UTF-8") as f:
         f.write(j)
 
-    with open("api/mp/models/graph_GetSnapshots.json", "r", encoding="UTF-8") as f:
+    with open(f"api/mp/models/graph_GetSnapshots.json", "r", encoding="UTF-8") as f:
         j = f.read()
     j = j.replace("https://cdn-2.matterport.com", localServer)
+    j = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
     with open(f"api/mp/models/graph_GetSnapshots.json", "w", encoding="UTF-8") as f:
+        f.write(j)
+
+    with open(f"api/mp/models/graph_GetModelViewPrefetch.json", "r", encoding="UTF-8") as f:
+        j = f.read()
+    j = j.replace("https://cdn-2.matterport.com", localServer)
+    j = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
+    with open(f"api/mp/models/graph_GetModelViewPrefetch.json", "w", encoding="UTF-8") as f:
         f.write(j)
 
 
@@ -357,6 +370,8 @@ def downloadPage(pageid):
     r.encoding = "utf-8"
     staticbase = re.search(
         r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
+    webglVendors = re.search(
+        r'https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js', r.text).group()
     match = re.search(
         r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', r.text)
     if match:
@@ -444,9 +459,11 @@ def downloadPage(pageid):
     injectedjs = 'if (window.location.search != "?m=' + pageid + \
                       '") { document.location.search = "?m=' + pageid + '"; }'
     content = r.text.replace(staticbase, ".").replace('"https://cdn-1.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/', '`${window.location.origin}${window.location.pathname}` + "').replace(
-        "window.MP_PREFETCHED_MODELDATA", f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
+        "window.MP_PREFETCHED_MODELDATA", f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace(f'{webglVendors}', webglVendors.replace('https://static.matterport.com/',''))
     content = re.sub(
         r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", content)
+
+    
     with open("index.html", "w", encoding="UTF-8") as f:
         f.write(content)
 
@@ -455,6 +472,7 @@ def downloadPage(pageid):
     if os.path.exists("js/showcase.js"):  # we want to always fetch showcase.js in case we patch it differently or the patching function starts to not work well run multiple times on itself
         os.replace("js/showcase.js", "js/showcase-bk.js") #backing up existing showcase file to be safe
     downloadAssets(staticbase)
+    downloadWebglVendors(webglVendors)
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
     print("Downloading model info...")
