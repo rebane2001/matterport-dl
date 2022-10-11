@@ -305,17 +305,16 @@ def patchGetModelDetails():
     with open(f"api/mp/models/graph_GetSnapshots.json", "r", encoding="UTF-8") as f:
         j = f.read()
     j = j.replace("https://cdn-2.matterport.com", localServer)
-    j = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
+    j = re.sub(r"validUntil\"\s:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
     with open(f"api/mp/models/graph_GetSnapshots.json", "w", encoding="UTF-8") as f:
         f.write(j)
 
     with open(f"api/mp/models/graph_GetModelViewPrefetch.json", "r", encoding="UTF-8") as f:
         j = f.read()
     j = j.replace("https://cdn-2.matterport.com", localServer)
-    j = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
+    j = re.sub(r"validUntil\"\s:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
     with open(f"api/mp/models/graph_GetModelViewPrefetch.json", "w", encoding="UTF-8") as f:
         f.write(j)
-    exit()
 
 
 def drange(x, y, jump):
