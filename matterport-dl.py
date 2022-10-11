@@ -298,7 +298,7 @@ def patchGetModelDetails():
     with open(f"api/mp/models/graph_GetModelDetails.json", "r", encoding="UTF-8") as f:
         j = f.read()
     j = j.replace("https://cdn-2.matterport.com", localServer)
-    j = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
+    j = re.sub(r"validUntil\"\s:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
     with open(f"api/mp/models/graph_GetModelDetails.json", "w", encoding="UTF-8") as f:
         f.write(j)
 
@@ -315,6 +315,7 @@ def patchGetModelDetails():
     j = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", j)
     with open(f"api/mp/models/graph_GetModelViewPrefetch.json", "w", encoding="UTF-8") as f:
         f.write(j)
+    exit()
 
 
 def drange(x, y, jump):
@@ -460,8 +461,7 @@ def downloadPage(pageid):
                       '") { document.location.search = "?m=' + pageid + '"; }'
     content = r.text.replace(staticbase, ".").replace('"https://cdn-1.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/', '`${window.location.origin}${window.location.pathname}` + "').replace(
         "window.MP_PREFETCHED_MODELDATA", f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace(f'{webglVendors}', webglVendors.replace('https://static.matterport.com/',''))
-    content = re.sub(
-        r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", content)
+    content = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", content)
 
     
     with open("index.html", "w", encoding="UTF-8") as f:
