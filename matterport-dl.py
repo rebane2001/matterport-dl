@@ -192,7 +192,7 @@ def downloadAssets(base):
                    "vert_arrows","headset-quest-2","pinIconDefault","tagColor"]
 
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
-              "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css"]
+              "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/split.css"]
               
     downloadFile("https://my.matterport.com/favicon.ico", "favicon.ico")
     downloadFile(base + "js/showcase.js", "js/showcase.js")
