@@ -69,6 +69,7 @@ def downloadSweeps(accessurl, sweeps):
     with tqdm(total=(len(sweeps)*len(getVariants()))) as pbar:
         with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
             for sweep in sweeps:
+                sweep = sweep.replace("-", "")
                 for variant in getVariants():
                     pbar.update(1)
                     executor.submit(downloadFile, accessurl.format(
@@ -331,7 +332,7 @@ KNOWN_ACCESS_KEY = None
 
 def GetOrReplaceKey(url, is_read_key):
     global KNOWN_ACCESS_KEY
-    key_regex = r'(t=2\-.+?\-0)'
+    key_regex = r'(t=2\-.+?\-[0-9])(&|$|")'
     match = re.search(key_regex, url)
     if match is None:
         return url
