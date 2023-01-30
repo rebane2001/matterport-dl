@@ -332,7 +332,8 @@ KNOWN_ACCESS_KEY = None
 
 def GetOrReplaceKey(url, is_read_key):
     global KNOWN_ACCESS_KEY
-    key_regex = r'(t=2\-.+?\-[0-9])(&|$|")'
+    # key_regex = r'(t=2\-.+?\-[0-9])(&|$|")'
+    key_regex = r'(t=(.+?)&k)'
     match = re.search(key_regex, url)
     if match is None:
         return url
@@ -395,7 +396,6 @@ def downloadPage(pageid):
         # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
         # queries.GetModelPrefetch.data.model.locations[X].pano.resolutions[Y] <--- has the resolutions they offer for this one
         # goal here is to move away from some of the access url hacks, but if we are successful on try one won't matter:)
-
         try:
             match = re.search(
                 r'window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});', r.text)
@@ -408,9 +408,51 @@ def downloadPage(pageid):
                         for skybox in location['pano']['skyboxes']:
                             try:
                                 for face in range(6):
+                                    skyboxUrlTemplate = skybox['urlTemplate'].replace("<face>", f'{face}')
+                                    downloadFile(skyboxUrlTemplate, urlparse(skyboxUrlTemplate).path[1:])
+                            except: 
+                                pass 
+
+                # Download Tilesets
+                base_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]["assets"]
+                for tileset in base_node["tilesets"]:
+                            tilesetUrl = tileset['url']
+                            downloadFile(tilesetUrl, urlparse(tilesetUrl).path[1:])
+                            tileSet = requests.get(tilesetUrl)
+                            uris = re.findall(r'"uri":"(.+?)"', tileSet.text)
+                            uris.sort()
+                            for uri in uris :
+                                url = tileset['urlTemplate'].replace("<file>", uri)
+                                downloadFile(url, urlparse(url).path[1:])
+                                chunk = requests.get(url)
+                                chunks = re.findall(r'(lod[\d]_room[\d]_chunk[\d]_[\d]{3}\.(jpg|ktx2))', chunk.text)
+                                chunks.sort()
+                                try:
+                                    for ktx2 in chunks:
+                                        chunkUri = f"{uri[:2]}{ktx2[0]}"
+                                        chunkUrl = tileset['urlTemplate'].replace("<file>", chunkUri)
+                                        print(chunkUri)
+                                        downloadFile(chunkUrl, urlparse(chunkUrl).path[1:])
+                                except:
+                                    pass
                                 
-                                    urlTemplate = skybox['urlTemplate'].replace("<face>", f'{face}')
-                                    downloadFile(urlTemplate, urlparse(urlTemplate).path[1:])
+
+                            try:
+                                for file in range(6):
+                                    try:
+                                        tileseUrlTemplate = tileset['urlTemplate'].replace("<file>", f'{file}.json')
+                                        downloadFile(tileseUrlTemplate, urlparse(tileseUrlTemplate).path[1:])
+                                        getFile = requests.get(tileseUrlTemplate)
+                                        fileUris = re.findall(r'"uri":"(.*?)"', getFile.text)
+                                        fileUris.sort()
+                                        for fileuri in fileUris:
+                                            print(fileuri)
+                                            fileUrl = tileset['urlTemplate'].replace("<file>", fileuri)
+                                            downloadFile(fileUrl, urlparse(fileUrl).path[1:])
+
+
+                                    except:
+                                        pass
                             except: 
                                 pass 
 
