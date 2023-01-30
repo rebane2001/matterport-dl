@@ -205,7 +205,7 @@ def downloadAssets(base):
     for js in js_extracted:
         if js not in js_files:
             print(
-                f'JS FILE EXTRACTED BUT not known, please file a github issue and tell us to add: {js}.js, will download for you though:)')
+                f'JS FILE EXTRACTED, {js}.js')
             js_files.append(js)
 
     for image in image_files:
