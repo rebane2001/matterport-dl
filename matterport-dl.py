@@ -420,23 +420,19 @@ def downloadPage(pageid):
                             downloadFile(tilesetUrl, urlparse(tilesetUrl).path[1:])
                             tileSet = requests.get(tilesetUrl)
                             uris = re.findall(r'"uri":"(.+?)"', tileSet.text)
-                            uris.sort()
                             for uri in uris :
                                 url = tileset['urlTemplate'].replace("<file>", uri)
                                 downloadFile(url, urlparse(url).path[1:])
                                 chunk = requests.get(url)
-                                chunks = re.findall(r'(lod[\d]_room[\d]_chunk[\d]_[\d]{3}\.(jpg|ktx2))', chunk.text)
-                                chunks.sort()
+                                chunks = re.findall(r'(lod[0-9]_[a-zA-Z0-9-_]+\.(jpg|ktx2))', chunk.text)
                                 try:
                                     for ktx2 in chunks:
                                         chunkUri = f"{uri[:2]}{ktx2[0]}"
                                         chunkUrl = tileset['urlTemplate'].replace("<file>", chunkUri)
-                                        print(chunkUri)
                                         downloadFile(chunkUrl, urlparse(chunkUrl).path[1:])
                                 except:
                                     pass
                                 
-
                             try:
                                 for file in range(6):
                                     try:
@@ -444,9 +440,7 @@ def downloadPage(pageid):
                                         downloadFile(tileseUrlTemplate, urlparse(tileseUrlTemplate).path[1:])
                                         getFile = requests.get(tileseUrlTemplate)
                                         fileUris = re.findall(r'"uri":"(.*?)"', getFile.text)
-                                        fileUris.sort()
                                         for fileuri in fileUris:
-                                            print(fileuri)
                                             fileUrl = tileset['urlTemplate'].replace("<file>", fileuri)
                                             downloadFile(fileUrl, urlparse(fileUrl).path[1:])
 
