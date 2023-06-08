@@ -508,7 +508,13 @@ if __name__ == "__main__":
         pageId = getPageId(sys.argv[1])
     openDirReadGraphReqs("graph_posts",pageId)
     if len(sys.argv) == 2:
-        initiateDownload(pageId)
+        try:
+            initiateDownload(pageId)
+        except Exception as error:
+            if "certificate verify failed" in str(error):
+                print (f"Error: {str(error)}. Have you tried running the Install Certificates.command file in the python folder?")
+            else:
+                print (f"Error: {str(error)}")
     elif len(sys.argv) == 4:
         os.chdir(getPageId(pageId))
         try:
