@@ -225,9 +225,10 @@ def downloadAssets(base):
                 local_file = local_file + "index.html"
             executor.submit(downloadFile, f"{base}{asset}", local_file)
 
-def downloadWebglVendors(url):
-    path= url.replace('https://static.matterport.com/','')
-    downloadFile(url, path)
+def downloadWebglVendors(urls):
+    for url in urls:      
+        path= url.replace('https://static.matterport.com/','')
+        downloadFile(url, path)
 
 def setAccessURLs(pageid):
     global accessurls
@@ -375,8 +376,15 @@ def downloadPage(pageid):
     r.encoding = "utf-8"
     staticbase = re.search(
         r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
-    webglVendors = re.search(
+    
+    threeMin = re.search(
         r'https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js', r.text).group()
+    dracoWasmWrapper = threeMin.replace('three.min.js','libs/draco/gltf/draco_wasm_wrapper.js') 
+    dracoDecoderWasm = threeMin.replace('three.min.js','libs/draco/gltf/draco_decoder.wasm') 
+    basisTranscoderWasm = threeMin.replace('three.min.js','libs/basis/basis_transcoder.wasm') 
+    basisTranscoderJs = threeMin.replace('three.min.js','libs/basis/basis_transcoder.js')
+    webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs ]
+    
     match = re.search(
         r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', r.text)
     if match:
@@ -431,7 +439,6 @@ def downloadPage(pageid):
                                     for ktx2 in chunks:
                                         chunkUri = f"{uri[:2]}{ktx2[0]}"
                                         chunkUrl = tileset['urlTemplate'].replace("<file>", chunkUri)
-                                        print(chunkUri)
                                         downloadFile(chunkUrl, urlparse(chunkUrl).path[1:])
                                 except:
                                     pass
@@ -444,7 +451,6 @@ def downloadPage(pageid):
                                         fileUris = re.findall(r'"uri":"(.*?)"', getFile.text)
                                         fileUris.sort()
                                         for fileuri in fileUris:
-                                            print(fileuri)
                                             fileUrl = tileset['urlTemplate'].replace("<file>", fileuri)
                                             downloadFile(fileUrl, urlparse(fileUrl).path[1:])
 
@@ -503,7 +509,7 @@ def downloadPage(pageid):
     injectedjs = 'if (window.location.search != "?m=' + pageid + \
                       '") { document.location.search = "?m=' + pageid + '"; }'
     content = r.text.replace(staticbase, ".").replace('"https://cdn-1.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/', '`${window.location.origin}${window.location.pathname}` + "').replace(
-        "window.MP_PREFETCHED_MODELDATA", f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace(f'{webglVendors}', webglVendors.replace('https://static.matterport.com/',''))
+        "window.MP_PREFETCHED_MODELDATA", f"{injectedjs};window.MP_PREFETCHED_MODELDATA").replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "').replace(f'{threeMin}', threeMin.replace('https://static.matterport.com/',''))
     content = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", content)
 
     
