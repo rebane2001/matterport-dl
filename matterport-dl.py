@@ -291,6 +291,7 @@ def patchShowcase():
                   "${window.location.origin}${window.location.pathname}")
     j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:i.RequestPriority.LOW})',
                   '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
+    j = j.replace('https://static.matterport.com','')
     with open(f"js/{SHOWCASE_INTERNAL_NAME}", "w", encoding="UTF-8") as f:
         f.write(j)
     j = j.replace(f'"POST"', '"GET"')  # no post requests for external hosted
