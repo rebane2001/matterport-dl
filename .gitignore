@@ -1,0 +1,10 @@
+# Ignore everything
+*
+
+# But not these files...
+!.gitignore
+!matterport-dl.py
+
+# Don't ignore the graph_posts directory and its contents
+!/graph_posts/
+!/graph_posts/*

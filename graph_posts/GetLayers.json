@@ -1,0 +1,7 @@
+{
+    "operationName": "GetLayers",
+    "variables": {
+        "viewId": "[MATTERPORT_MODEL_ID]"
+    },
+    "query": "query GetLayers($viewId: ID!) {\n  view(id: $viewId) {\n    id\n    layers {\n      ...ViewLayerDetails\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment ViewLayerDetails on ModelViewLayer {\n  layer {\n    ...LayerDetails\n    __typename\n  }\n  position\n  visible\n  __typename\n}\n\nfragment LayerDetails on ModelLayer {\n  id\n  created\n  modified\n  type\n  name\n  label\n  __typename\n}\n"
+}
