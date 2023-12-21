@@ -104,6 +104,9 @@ def downloadFileWithJSONPost(url, file, post_json_str, descriptor):
         f'Successfully downloaded w/ JSON post to: {url} ({descriptor}) to: {file}')
 
 
+# Create a session object
+session = requests.Session()
+
 def downloadFile(url, file, post_data=None):
     global accessurls
     url = GetOrReplaceKey(url, False)
@@ -113,36 +116,43 @@ def downloadFile(url, file, post_data=None):
     if "?" in file:
         file = file.split('?')[0]
 
-    # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+    # Skip already downloaded files except index.html, which may have newer access keys
     if os.path.exists(file):
         logging.debug(f'Skipping url: {url} as already downloaded')
         return
     try:
-        _filename, headers = urllib.request.urlretrieve(
-            url, file, None, post_data)
-        logging.debug(f'Successfully downloaded: {url} to: {file}')
-        return
-    except urllib.error.HTTPError as err:
-        logging.warning(
-            f'URL error Handling {url} of will try alt: {str(err)}')
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.5790.110 Safari/537.36",
+            "Referer": "https://my.matterport.com/",
+        }
+        response = session.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception if the response has an error status code
 
-        # Try again but with different accessurls (very hacky!)
+        with open(file, 'wb') as f:
+            f.write(response.content)
+        logging.debug(f'Successfully downloaded: {url} to: {file}')
+    except requests.exceptions.HTTPError as err:
+        logging.warning(f'URL error Handling {url} or will try alt: {str(err)}')
+
+        # Try again with different accessurls (very hacky!)
         if "?t=" in url:
             for accessurl in accessurls:
                 url2 = ""
                 try:
                     url2 = f"{url.split('?')[0]}?{accessurl}"
-                    urllib.request.urlretrieve(url2, file)
-                    logging.debug(
-                        f'Successfully downloaded through alt: {url2} to: {file}')
+                    response = session.get(url2, headers=headers)
+                    response.raise_for_status()  # Raise an exception if the response has an error status code
+
+                    with open(file, 'wb') as f:
+                        f.write(response.content)
+                    logging.debug(f'Successfully downloaded through alt: {url2} to: {file}')
                     return
-                except urllib.error.HTTPError as err:
-                    logging.warning(
-                        f'URL error alt method tried url {url2} Handling of: {str(err)}')
+                except requests.exceptions.HTTPError as err:
+                    logging.warning(f'URL error alt method tried url {url2} Handling of: {str(err)}')
                     pass
         logging.error(f'Failed to succeed for url {url}')
         raise Exception
-        # hopefully not getting here?
+        # Hopefully not getting here?
         logging.error(f'Failed2 to succeed for url {url}')
 
 
