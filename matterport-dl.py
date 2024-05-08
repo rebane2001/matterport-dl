@@ -6,7 +6,7 @@ Usage is either running this program with the URL/pageid as an argument or calli
 '''
 
 import uuid
-import requests
+from curl_cffi import requests
 import json
 import threading
 import concurrent.futures
@@ -131,7 +131,7 @@ def downloadFile(url, file, post_data=None):
         with open(file, 'wb') as f:
             f.write(response.content)
         logging.debug(f'Successfully downloaded: {url} to: {file}')
-    except requests.exceptions.HTTPError as err:
+    except Exception as err:
         logging.warning(f'URL error Handling {url} or will try alt: {str(err)}')
 
         # Try again with different accessurls (very hacky!)
@@ -147,7 +147,7 @@ def downloadFile(url, file, post_data=None):
                         f.write(response.content)
                     logging.debug(f'Successfully downloaded through alt: {url2} to: {file}')
                     return
-                except requests.exceptions.HTTPError as err:
+                except Exception as err:
                     logging.warning(f'URL error alt method tried url {url2} Handling of: {str(err)}')
                     pass
         logging.error(f'Failed to succeed for url {url}')
@@ -608,7 +608,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         post_msg = None
         try:
-            if self.path == "/api/mp/models/graph":
+            if urlparse(self.path).path == "/api/mp/models/graph":
                 self.send_response(200)
                 self.end_headers()
                 content_len = int(self.headers.get('content-length'))
