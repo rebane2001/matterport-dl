@@ -205,7 +205,7 @@ def downloadAssets(base):
     assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
               "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/split.css","css/late.css", "matterport-logo.svg"]
               
-    downloadFile("https://my.matterport.com/favicon.ico", "favicon.ico")
+    downloadFile("https://static.matterport.com/app-marketplace-config/24.5.1-2-g12d356ff/favicon.ico", "favicon.ico")
     downloadFile(base + "js/showcase.js", "js/showcase.js")
     with open(f"js/showcase.js", "r", encoding="UTF-8") as f:
         showcase_cont = f.read()
@@ -406,7 +406,7 @@ def downloadPage(pageid):
     # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
     file_type_content = requests.get(
         f"https://my.matterport.com/api/player/models/{pageid}/files?type=3")
-    GetOrReplaceKey(file_type_content.text, True)
+    # GetOrReplaceKey(file_type_content.text, True)
     if ADVANCED_DOWNLOAD_ALL:
         print("Doing advanced download of dollhouse/floorplan data...")
         # Started to parse the modeldata further.  As it is error prone tried to try catch silently for failures. There is more data here we could use for example:
