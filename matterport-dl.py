@@ -431,7 +431,14 @@ def downloadPage(pageid):
     page_root_dir = os.path.abspath('.')
     url = f"https://my.matterport.com/show/?m={pageid}"
     print(f"Downloading base page... {url}")
-    r = requests.get(url)
+    try:
+        r = requests.get(url)
+    except Exception as error:
+        if "certificate verify failed" in str(error) or "SSL certificate problem" in str(error):
+            raise TypeError(f"Error: {str(error)}. Have you tried running the Install Certificates.command (or similar) file in the python folder to install the normal root certs?") from error
+        else:
+            raise TypeError("First request error") from error
+
     r.encoding = "utf-8"
     staticbase = re.search(r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
     
@@ -729,13 +736,7 @@ if __name__ == "__main__":
         pageId = getPageId(sys.argv[1])
     openDirReadGraphReqs("graph_posts",pageId)
     if len(sys.argv) == 2:
-        try:
-            initiateDownload(pageId)
-        except Exception as error:
-            if "certificate verify failed" in str(error):
-                print (f"Error: {str(error)}. Have you tried running the Install Certificates.command file in the python folder?")
-            else:
-                print (f"Error: {str(error)}")
+        initiateDownload(pageId)
     elif len(sys.argv) == 4:
         os.chdir(getPageId(pageId))
         try:
