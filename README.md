@@ -13,8 +13,9 @@ A tool to download/archive [Matterport](https://matterport.com) virtual tours.  
 # Advanced Options
 -   Add `--proxy 127.0.0.1:1234` to a download run to use a proxy for requests
 -   Add `--advanced-download` to a download run to try and download the needed textures and files for supporting dollhouse/floorplan views.  NOTE: Must use built in webserver to host content for this to work.
--	Add `--brute-js` to try and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)
-
+-   Add `--no-tilda` strip paths that contain '~' to work on other platforms. Note this only works with the internal server.
+-   Add `--brute-js` to try and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)
+	
 # Additional Notes
 * It is possible to host these Matterport archives using standard web servers however: 1) Certain features beyond the tour itself may not work.  2)  #1 may be fixable by specific rewrite rules for apache/nginx.  These are not currently provided but if you look at `OurSimpleHTTPRequestHandler` class near the bottom of the source file you can likely figure out what redirects we do.
 
