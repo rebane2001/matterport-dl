@@ -243,7 +243,7 @@ def downloadAssets(base):
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
     file = "js/showcase.js"
     typeDict = {file: "STATIC_JS"}
-    downloadFile("STATIC_ASSET", True, "https://my.matterport.com/favicon.ico", "favicon.ico") #mainly to avoid the 404
+    downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico") #mainly to avoid the 404
     downloadFile(typeDict[file], True, base + file, file)
 
     with open(file, "r", encoding="UTF-8") as f:
