@@ -100,8 +100,8 @@ def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descri
 def downloadFile(type, shouldExist, url, file, post_data=None):
     global accessurls, NO_TILDA_IN_PATH
     url = GetOrReplaceKey(url,False)
-# Create a session object
-session = requests.Session()
+    # Create a session object
+    session = requests.Session()
 
     if NO_TILDA_IN_PATH:
         file = file.replace("~","_")
@@ -116,7 +116,7 @@ session = requests.Session()
     reqId = logUrlDownloadStart(type, file, url, "", shouldExist)
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.5790.110 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             "Referer": "https://my.matterport.com/",
         }
         response = session.get(url, headers=headers)
@@ -126,7 +126,7 @@ session = requests.Session()
             f.write(response.content)
         logUrlDownloadFinish(type, file, url, "", shouldExist, reqId)
         return
-    except urllib.error.HTTPError as err:
+    except Exception as err:
 
         # Try again but with different accessurls (very hacky!)
         if "?t=" in url:
@@ -237,7 +237,7 @@ def downloadAssets(base):
     "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask",
                    "vert_arrows","headset-quest-2","pinIconDefault","tagColor"]
 
-    assets = ["css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
+    assets = ["js/browser-check.js", "css/showcase.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png",
               "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/split.css","css/late.css", "matterport-logo.svg"]
               
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
@@ -256,7 +256,7 @@ def downloadAssets(base):
         
     for js in js_extracted:
         file = f"js/{js}.js"
-        if js not in js_files and file not in assets:
+        if js not in js_files_manual and file not in assets:
 #            print(f'JS FILE EXTRACTED BUT not known, please create a github issue (if one does not exist for this file) and tell us to add: {file}, did download for this run though')
             typeDict[file] = "DISCOVERED_JS"
             assets.append(file)
@@ -273,7 +273,7 @@ def downloadAssets(base):
         file = "images/" + image
         typeDict[file] = "STATIC_IMAGE"
         assets.append(file)
-    for js in js_files:
+    for js in js_files_manual:
         file = "js/" + js + ".js"
         typeDict[file] = "STATIC_JS"
         assets.append(file)
@@ -296,13 +296,13 @@ def downloadAssets(base):
                 shouldExist = False
             executor.submit(downloadFile, type, shouldExist, f"{base}{asset}", local_file)
 
-def setAccessURLs(pageid):
-    global accessurls
 def downloadWebglVendors(urls):
     for url in urls:      
         path= url.replace('https://static.matterport.com/','')
-        downloadFile(url, path)
+        downloadFile("WEBGL_FILE", False, url, path)
 
+def setAccessURLs(pageid):
+    global accessurls
     with open(f"api/player/models/{pageid}/files_type2", "r", encoding="UTF-8") as f:
         filejson = json.load(f)
         accessurls.append(filejson["base.url"].split("?")[-1])
@@ -429,27 +429,25 @@ def downloadPage(pageid):
         logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
     logging.debug(f'Started up a download run')
     page_root_dir = os.path.abspath('.')
-    print("Downloading base page...")
-    r = requests.get(f"https://my.matterport.com/show/?m={pageid}")
+    url = f"https://my.matterport.com/show/?m={pageid}"
+    print(f"Downloading base page... {url}")
+    r = requests.get(url)
     r.encoding = "utf-8"
-    staticbase = re.search(
-        r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
+    staticbase = re.search(r'<base href="(https://static.matterport.com/.*?)">', r.text).group(1)
     
-    threeMin = re.search(
-        r'https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js', r.text).group()
+    threeMin = re.search(r'https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js', r.text).group()
     dracoWasmWrapper = threeMin.replace('three.min.js','libs/draco/gltf/draco_wasm_wrapper.js') 
     dracoDecoderWasm = threeMin.replace('three.min.js','libs/draco/gltf/draco_decoder.wasm') 
     basisTranscoderWasm = threeMin.replace('three.min.js','libs/basis/basis_transcoder.wasm') 
     basisTranscoderJs = threeMin.replace('three.min.js','libs/basis/basis_transcoder.js')
     webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs ]
     
-    match = re.search(
-        r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', r.text)
+    match = re.search(r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', r.text)
     if match:
         accessurl = f'{match.group(1)}~/{{filename}}{match.group(3)}'
         
     else:
-        raise Exception("Can't find urls")
+        raise Exception(f"Can't find urls, try the main page: {url} in a browser to make sure it loads the model")
 
     # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
     file_type_content = requests.get(f"https://my.matterport.com/api/player/models/{pageid}/files?type=3") #get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
@@ -471,7 +469,6 @@ def downloadPage(pageid):
                         downloadFile("ADV_MODEL_MESH","50k" not in mesh["url"],mesh["url"], urlparse(mesh["url"]).path[1:])#not expecting the non 50k one to work but mgiht as well try
                     except:
                         pass
-                for texture in base_node["textures"]:
 
                 # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
                 base_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
@@ -522,7 +519,7 @@ def downloadPage(pageid):
                                         pass
                             except: 
                                 pass 
-
+                for texture in base_node["textures"]:
                     try: #on first exception assume we have all the ones needed
                         for i in range(1000):
                             full_text_url = texture["urlTemplate"].replace("<texture>",f'{i:03d}')
@@ -562,6 +559,7 @@ def downloadPage(pageid):
     if os.path.exists("js/showcase.js"): #we want to always fetch showcase.js in case we patch it differently or the patching function starts to not work well run multiple times on itself
         os.replace("js/showcase.js","js/showcase-bk.js") #backing up existing showcase file to be safe
     downloadAssets(staticbase)
+    downloadWebglVendors(webglVendors)
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
     print("Downloading model info...")
@@ -579,7 +577,6 @@ def downloadPage(pageid):
     print("Done!")
 
 def initiateDownload(url):
-    downloadWebglVendors(webglVendors)
     downloadPage(getPageId(url))
 def getPageId(url):
     return url.split("m=")[-1].split("&")[0]
@@ -592,7 +589,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_my_headers()
-        SimpleHTTPServer.SimpleHTTPRequestHandler.end_headers(self)
+        SimpleHTTPRequestHandler.end_headers(self)
 
     def send_my_headers(self):
         if ".js" in self.path or ".json" in self.path or ".html" in self.path:
