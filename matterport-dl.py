@@ -62,6 +62,7 @@ def downloadSweeps(accessurl, sweeps):
     with tqdm(total=(len(sweeps)*len(getVariants()))) as pbar:
         with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
             for sweep in sweeps:
+                sweep = sweep.replace("-", "")
                 for variant in getVariants():
                     pbar.update(1)
                     executor.submit(downloadFile, "MODEL_SWEEPS", True, accessurl.format(filename=f'tiles/{sweep}/{variant}') + "&imageopt=1", f'tiles/{sweep}/{variant}')
