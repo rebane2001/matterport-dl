@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
+# ruff: noqa: E722
 
 '''
 Downloads virtual tours from matterport.
 Usage is either running this program with the URL/pageid as an argument or calling the initiateDownload(URL/pageid) method.
 '''
 
-import uuid
 from curl_cffi import requests
 import json
 import threading
@@ -25,8 +25,8 @@ import decimal
 
 
 
-# Weird hack
-accessurls = []
+# Matterport uses various access keys for a page, when the primary key doesnt work we try some other ones
+accesskeys = []
 SHOWCASE_INTERNAL_NAME = "showcase-internal.js"
 
 def makeDirs(dirname):
@@ -127,7 +127,7 @@ def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, isBinar
 
 #Add type parameter, shortResourcePath, shouldExist
 def downloadFile(type, shouldExist, url, file, post_data=None):
-    global accessurls, NO_TILDA_IN_PATH
+    global accesskeys, NO_TILDA_IN_PATH
     url = GetOrReplaceKey(url,False)
     # Create a session object
     session = requests.Session()
@@ -157,9 +157,9 @@ def downloadFile(type, shouldExist, url, file, post_data=None):
         return
     except Exception as err:
 
-        # Try again but with different accessurls (very hacky!)
+        # Try again but with different accesskeys
         if "?t=" in url:
-            for accessurl in accessurls:
+            for accessurl in accesskeys:
                 url2=""
                 try:
                     url2=f"{url.split('?')[0]}?{accessurl}"
@@ -344,13 +344,13 @@ def downloadWebglVendors(urls):
         downloadFile("WEBGL_FILE", False, url, path)
 
 def setAccessURLs(pageid):
-    global accessurls
+    global accesskeys
     with open(f"api/player/models/{pageid}/files_type2", "r", encoding="UTF-8") as f:
         filejson = json.load(f)
-        accessurls.append(filejson["base.url"].split("?")[-1])
+        accesskeys.append(filejson["base.url"].split("?")[-1])
     with open(f"api/player/models/{pageid}/files_type3", "r", encoding="UTF-8") as f:
         filejson = json.load(f)
-        accessurls.append(filejson["templates"][0].split("?")[-1])
+        accesskeys.append(filejson["templates"][0].split("?")[-1])
 
 
 def downloadInfo(pageid):
@@ -363,7 +363,7 @@ def downloadInfo(pageid):
                 local_file = local_file    + "index.html"
             executor.submit(downloadFile, "MODEL_INFO", True, f"https://my.matterport.com/{asset}", local_file )
     makeDirs("api/mp/models")
-    with open(f"api/mp/models/graph", "w", encoding="UTF-8") as f:
+    with open("api/mp/models/graph", "w", encoding="UTF-8") as f:
         f.write('{"data": "empty"}')
     for i in range(1,4): #file to url mapping
         downloadFile("FILE_TO_URL_JSON",True,f"https://my.matterport.com/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
@@ -376,7 +376,7 @@ def downloadPics(pageid):
         for image in modeldata["images"]:
             executor.submit(downloadFile, "MODEL_IMAGES", True, image["src"], urlparse(image["src"]).path[1:])
 
-def downloadModel(pageid,accessurl):
+def downloadMainAssets(pageid,accessurl):
     global ADVANCED_DOWNLOAD_ALL
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
@@ -393,13 +393,13 @@ def patchShowcase():
     with open("js/showcase.js","r",encoding="UTF-8") as f:
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)","",j)
-    j = j.replace(f'"/api/mp/','`${window.location.pathname}`+"api/mp/')
+    j = j.replace('"/api/mp/','`${window.location.pathname}`+"api/mp/')
     j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
     j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
     j = j.replace('https://static.matterport.com','')
     with open(f"js/{SHOWCASE_INTERNAL_NAME}","w",encoding="UTF-8") as f:
         f.write(j)
-    j = j.replace(f'"POST"','"GET"') #no post requests for external hosted
+    j = j.replace('"POST"','"GET"') #no post requests for external hosted
     with open("js/showcase.js","w",encoding="UTF-8") as f:
         f.write(j)
 
@@ -415,6 +415,7 @@ KEY_REPLACE_ACTIVE=True
 def EnableDisableKeyReplacement(enabled):
     global KEY_REPLACE_ACTIVE
     KEY_REPLACE_ACTIVE = enabled
+
 def GetOrReplaceKey(url, is_read_key):
     global KNOWN_ACCESS_KEY,KEY_REPLACE_ACTIVE
     if not KEY_REPLACE_ACTIVE:
@@ -432,30 +433,19 @@ def GetOrReplaceKey(url, is_read_key):
     return url
 
 
-def downloadPage(pageid):
+def downloadCapture(pageid):
     global ADVANCED_DOWNLOAD_ALL, KNOWN_ACCESS_KEY, successCounter, requestCounter
     makeDirs(pageid)
     os.chdir(pageid)
-
-    ADV_CROP_FETCH = [
-            {
-                "start":"width=512&crop=1024,1024,",
-                "increment":'0.5'
-            },
-            {
-                "start":"crop=512,512,",
-               "increment":'0.25'
-            }
-        ]
 
     try:
         logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S',  encoding='utf-8')
     except ValueError:
         logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
-    logging.debug(f'Started up a download run')
+    logging.debug('Started up a download run')
     page_root_dir = os.path.abspath('.')
     url = f"https://my.matterport.com/show/?m={pageid}"
-    print(f"Downloading base page... {url}")
+    print(f"Downloading capture of {pageid} with base page... {url}")
     try:
         base_page_fetch = requests.get(url)
     except Exception as error:
@@ -473,13 +463,12 @@ def downloadPage(pageid):
     basisTranscoderWasm = threeMin.replace('three.min.js','libs/basis/basis_transcoder.wasm') 
     basisTranscoderJs = threeMin.replace('three.min.js','libs/basis/basis_transcoder.js')
     webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs ]
-    
     match = re.search(r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_fetch.text)
     if match:
         accessurl = f'{match.group(1)}~/{{filename}}{match.group(3)}'
         
     else:
-        raise Exception(f"Can't find urls, try the main page: {url} in a browser to make sure it loads the model")
+        raise Exception(f"Can't find urls, try the main page: {url} in a browser to make sure it loads the model correctly")
 
     # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
     file_type_content = requests.get(f"https://my.matterport.com/api/player/models/{pageid}/files?type=3") #get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
@@ -490,139 +479,7 @@ def downloadPage(pageid):
     
 
     if ADVANCED_DOWNLOAD_ALL:
-        print("Doing advanced download of dollhouse/floorplan data...")
-        # Started to parse the modeldata further.  As it is error prone tried to try catch silently for failures. There is more data here we could use for example:
-        # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].tileUrlTemplate
-        # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
-        # queries.GetModelPrefetch.data.model.locations[X].pano.resolutions[Y] <--- has the resolutions they offer for this one
-        # goal here is to move away from some of the access url hacks, but if we are successful on try one won't matter:)
-        EnableDisableKeyReplacement(False)
-
-        try:
-            base_node : any = None #lets try to use this now first seems to be more accurate the precache key can be invalid in comparison
-            base_cache_node : any = None
-            try:
-                with open(f"api/mp/models/graph_GetModelDetails_orig.json", "r", encoding="UTF-8") as f:
-                    graphModelDetailsJson = json.loads(f.read())
-                    base_node = graphModelDetailsJson["data"]["model"]
-            except Exception:
-                logging.exception("Unable to open graph model details output json something probably wrong.....")
-            
-            match = re.search(r'window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});', base_page_fetch.text)
-            if match:
-                preload_json = json.loads(match.group(1)) #in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
-                base_cache_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
-
-            if not base_cache_node:
-                base_cache_node = base_node
-            if not base_node:
-               base_node = base_cache_node
-            if "locations" not in base_node: #the query doesnt get locations back but the cahce does have it
-                base_node["locations"] = base_cache_node["locations"]
-                
-            for mesh in base_node["assets"]["meshes"]:
-                try:
-                    downloadFile("ADV_MODEL_MESH","50k" not in mesh["url"],mesh["url"], urlparse(mesh["url"]).path[1:])#not expecting the non 50k one to work but mgiht as well try
-                except:
-                    pass
-
-
-            # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
-            for location in base_node["locations"]:
-                        for skybox in location['pano']['skyboxes']:
-                            try:
-                                for face in range(6):
-                                    skyboxUrlTemplate = skybox['urlTemplate'].replace("<face>", f'{face}')
-                                    downloadFile("ADV_SKYBOX", False, skyboxUrlTemplate, urlparse(skyboxUrlTemplate).path[1:])
-                            except: 
-                                pass 
-
-            # Download Tilesets
-            for tileset in base_node["assets"]["tilesets"]:
-                        tilesetUrl = tileset['url']
-                        tilesetUrlTemplate : str = tileset['urlTemplate']
-                        if "<file>" not in tilesetUrlTemplate: #the graph details does have it but the cached data does not
-                            tilesetUrlTemplate = tilesetUrlTemplate.replace("?","<file>?")
-                        tilesetBaseFile = urlparse(tilesetUrl).path[1:]
-                        try:
-                            tileSetText = downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile)
-
-                            uris = re.findall(r'"uri":"(.+?)"', tileSetText)
-
-                            uris.sort()
-
-                            for uri in uris:
-                                url = tilesetUrlTemplate.replace("<file>", uri)
-                                try:
-                                    # chunkText = downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], None, True)
-                                    downloadFile("ADV_TILESET_GLB", False, url, urlparse(url).path[1:])
-                                    chunkText = requests.get(url).text #not sure how to do this from file open yet....
-                                    chunks = re.findall(r'(lod[0-9]_[a-zA-Z0-9-_]+\.(jpg|ktx2))', chunkText)
-                                    #print("Found chunks: ",chunks)
-                                    #exit(5)
-                                    chunks.sort()
-                                    for ktx2 in chunks:
-                                        chunkUri = f"{uri[:2]}{ktx2[0]}"
-                                        chunkUrl = tilesetUrlTemplate.replace("<file>", chunkUri)
-                                        try:
-                                            downloadFile("ADV_TILESET_CHUNK", False, chunkUrl, urlparse(chunkUrl).path[1:])
-                                        except:
-                                            pass
-                                except:
-                                    raise
-                        except:
-                            raise
-
-                        for file in range(6):
-                            try:
-                                tileseUrlTemplate = tilesetUrlTemplate.replace("<file>", f'{file}.json')
-                                getFileText = downloadFileAndGetText("ADV_TILESET_JSON", False, tileseUrlTemplate, urlparse(tileseUrlTemplate).path[1:])
-                                fileUris = re.findall(r'"uri":"(.*?)"', getFileText)
-                                fileUris.sort()
-                                for fileuri in fileUris:
-                                    fileUrl = tilesetUrlTemplate.replace("<file>", fileuri)
-                                    try:
-                                        downloadFile("ADV_TILESET_EXTRACT", False, fileUrl, urlparse(fileUrl).path[1:])
-                                    except:
-                                        pass
-
-                            except:
-                                pass
-
-            for texture in base_node["assets"]["textures"]:
-                try: #on first exception assume we have all the ones needed
-                    for i in range(1000):
-                        full_text_url = texture["urlTemplate"].replace("<texture>",f'{i:03d}')
-                        crop_to_do = []
-                        if texture["quality"] == "high":
-                            crop_to_do = ADV_CROP_FETCH
-                        for crop in crop_to_do:
-                            for x in list(drange(0, 1, decimal.Decimal(crop["increment"]))):
-                                for y in list(drange(0, 1, decimal.Decimal(crop["increment"]))):
-                                    xs = f'{x}'
-                                    ys = f'{y}'
-                                    if xs.endswith('.0'):
-                                        xs = xs[:-2]
-                                    if ys.endswith('.0'):
-                                        ys = ys[:-2]
-                                    complete_add=f'{crop["start"]}x{xs},y{ys}'
-                                    complete_add_file = complete_add.replace("&","_")
-                                    try:
-                                        downloadFile("ADV_TEXTURE_CROPPED", False, full_text_url + "&" + complete_add, urlparse(full_text_url).path[1:] + complete_add_file + ".jpg") #failures here ok we dont know all teh crops that d exist
-                                    except:
-                                        pass
-                        try:
-                            downloadFile("ADV_TEXTURE_FULL", True, full_text_url, urlparse(full_text_url).path[1:])
-                        except:
-                            break
-                except Exception:
-                    logging.exception("Adv download texture have exception")
-        except Exception:
-            logging.exception("Adv download general had exception of")
-
-            pass
-
-    EnableDisableKeyReplacement(True)
+        AdvancedAssetDownload(base_page_fetch)
     
     # Automatic redirect if GET param isn't correct
     injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; }'
@@ -642,14 +499,158 @@ def downloadPage(pageid):
     downloadInfo(pageid)
     print("Downloading images...")
     downloadPics(pageid)
-    print(f"Downloading model ID: {pageid} ...")
-    downloadModel(pageid,accessurl)
+    print("Downloading primary model assets...")
+    downloadMainAssets(pageid,accessurl)
     os.chdir(page_root_dir)
     open("api/v1/event", 'a').close()
     print(f"Done, total actual downloads: {successCounter} of total requests: {requestCounter}!")
 
+def AdvancedAssetDownload(base_page_fetch):
+    ADV_CROP_FETCH = [
+            {
+                "start":"width=512&crop=1024,1024,",
+                "increment":'0.5'
+            },
+            {
+                "start":"crop=512,512,",
+               "increment":'0.25'
+            }
+        ]    
+    print("Doing advanced download of dollhouse/floorplan data...")
+        # Started to parse the modeldata further.  As it is error prone tried to try catch silently for failures. There is more data here we could use for example:
+        # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].tileUrlTemplate
+        # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
+        # queries.GetModelPrefetch.data.model.locations[X].pano.resolutions[Y] <--- has the resolutions they offer for this one
+        # goal here is to move away from some of the access url hacks, but if we are successful on try one won't matter:)
+    EnableDisableKeyReplacement(False)
+
+    try:
+        base_node : any = None #lets try to use this now first seems to be more accurate the precache key can be invalid in comparison
+        base_cache_node : any = None
+        try:
+            with open("api/mp/models/graph_GetModelDetails_orig.json", "r", encoding="UTF-8") as f:
+                graphModelDetailsJson = json.loads(f.read())
+                base_node = graphModelDetailsJson["data"]["model"]
+        except Exception:
+            logging.exception("Unable to open graph model details output json something probably wrong.....")
+            
+        match = re.search(r'window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});', base_page_fetch.text)
+        if match:
+            preload_json = json.loads(match.group(1)) #in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
+            base_cache_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
+
+        if not base_cache_node:
+            base_cache_node = base_node
+        if not base_node:
+           base_node = base_cache_node
+        if "locations" not in base_node: #the query doesnt get locations back but the cahce does have it
+            base_node["locations"] = base_cache_node["locations"]
+                
+        for mesh in base_node["assets"]["meshes"]:
+            try:
+                downloadFile("ADV_MODEL_MESH","50k" not in mesh["url"],mesh["url"], urlparse(mesh["url"]).path[1:])#not expecting the non 50k one to work but mgiht as well try
+            except:
+                pass
+
+
+            # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
+        for location in base_node["locations"]:
+                    for skybox in location['pano']['skyboxes']:
+                        try:
+                            for face in range(6):
+                                skyboxUrlTemplate = skybox['urlTemplate'].replace("<face>", f'{face}')
+                                downloadFile("ADV_SKYBOX", False, skyboxUrlTemplate, urlparse(skyboxUrlTemplate).path[1:])
+                        except: 
+                            pass 
+
+            # Download Tilesets
+        for tileset in base_node["assets"]["tilesets"]:
+                    tilesetUrl = tileset['url']
+                    tilesetUrlTemplate : str = tileset['urlTemplate']
+                    if "<file>" not in tilesetUrlTemplate: #the graph details does have it but the cached data does not
+                        tilesetUrlTemplate = tilesetUrlTemplate.replace("?","<file>?")
+                    tilesetBaseFile = urlparse(tilesetUrl).path[1:]
+                    try:
+                        tileSetText = downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile)
+
+                        uris = re.findall(r'"uri":"(.+?)"', tileSetText)
+
+                        uris.sort()
+
+                        for uri in uris:
+                            url = tilesetUrlTemplate.replace("<file>", uri)
+                            try:
+                                    # chunkText = downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], None, True)
+                                downloadFile("ADV_TILESET_GLB", False, url, urlparse(url).path[1:])
+                                chunkText = requests.get(url).text #not sure how to do this from file open yet....
+                                chunks = re.findall(r'(lod[0-9]_[a-zA-Z0-9-_]+\.(jpg|ktx2))', chunkText)
+                                    #print("Found chunks: ",chunks)
+                                    #exit(5)
+                                chunks.sort()
+                                for ktx2 in chunks:
+                                    chunkUri = f"{uri[:2]}{ktx2[0]}"
+                                    chunkUrl = tilesetUrlTemplate.replace("<file>", chunkUri)
+                                    try:
+                                        downloadFile("ADV_TILESET_CHUNK", False, chunkUrl, urlparse(chunkUrl).path[1:])
+                                    except:
+                                        pass
+                            except:
+                                raise
+                    except:
+                        raise
+
+                    for file in range(6):
+                        try:
+                            tileseUrlTemplate = tilesetUrlTemplate.replace("<file>", f'{file}.json')
+                            getFileText = downloadFileAndGetText("ADV_TILESET_JSON", False, tileseUrlTemplate, urlparse(tileseUrlTemplate).path[1:])
+                            fileUris = re.findall(r'"uri":"(.*?)"', getFileText)
+                            fileUris.sort()
+                            for fileuri in fileUris:
+                                fileUrl = tilesetUrlTemplate.replace("<file>", fileuri)
+                                try:
+                                    downloadFile("ADV_TILESET_EXTRACT", False, fileUrl, urlparse(fileUrl).path[1:])
+                                except:
+                                    pass
+
+                        except:
+                            pass
+
+        for texture in base_node["assets"]["textures"]:
+            try: #on first exception assume we have all the ones needed
+                for i in range(1000):
+                    full_text_url = texture["urlTemplate"].replace("<texture>",f'{i:03d}')
+                    crop_to_do = []
+                    if texture["quality"] == "high":
+                        crop_to_do = ADV_CROP_FETCH
+                    for crop in crop_to_do:
+                        for x in list(drange(0, 1, decimal.Decimal(crop["increment"]))):
+                            for y in list(drange(0, 1, decimal.Decimal(crop["increment"]))):
+                                xs = f'{x}'
+                                ys = f'{y}'
+                                if xs.endswith('.0'):
+                                    xs = xs[:-2]
+                                if ys.endswith('.0'):
+                                    ys = ys[:-2]
+                                complete_add=f'{crop["start"]}x{xs},y{ys}'
+                                complete_add_file = complete_add.replace("&","_")
+                                try:
+                                    downloadFile("ADV_TEXTURE_CROPPED", False, full_text_url + "&" + complete_add, urlparse(full_text_url).path[1:] + complete_add_file + ".jpg") #failures here ok we dont know all teh crops that d exist
+                                except:
+                                    pass
+                    try:
+                        downloadFile("ADV_TEXTURE_FULL", True, full_text_url, urlparse(full_text_url).path[1:])
+                    except:
+                        break
+            except Exception:
+                logging.exception("Adv download texture have exception")
+    except Exception:
+        logging.exception("Adv download general had exception of")
+
+        pass
+    EnableDisableKeyReplacement(True)
+
 def initiateDownload(url):
-    downloadPage(getPageId(url))
+    downloadCapture(getPageId(url))
 def getPageId(url):
     return url.split("m=")[-1].split("&")[0]
 
@@ -813,4 +814,4 @@ if __name__ == "__main__":
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         httpd.serve_forever()
     else:
-        print (f"Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support\n\t--no-tilda -- Use this option to remove the tilda from file paths (say for linux)\n\t--brute-js -- Use this option to ry and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)")
+        print ("Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support\n\t--no-tilda -- Use this option to remove the tilda from file paths (say for linux)\n\t--brute-js -- Use this option to ry and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)")
