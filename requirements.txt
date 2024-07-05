@@ -1,3 +1,4 @@
 requests
 tqdm
 curl_cffi
+aiofiles
