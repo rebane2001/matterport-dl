@@ -296,11 +296,9 @@ def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParam
 
 async def downloadAssets(base):
     global PROGRESS
-    js_files_manual = [ #not really used any more unless we run into bad results
-        "30", "46", "47", "66", "79", "134", "136", "143", "164", "250", "251", "316", "321", "356", "371", "376", "383", "386", "422", "423",
-        "464", "524", "525", "539", "580", "584", "606", "614", "666", "670", "718", "721", "726", "755", "764", "828", "833", "838", "932",
-         "947", "300", "309", "393", "521", "564", "633", "674", "769", "856", "934", "207","260","385","58","794","976","995", "330", "39", "519",
-          "399","438", "62", "76", "926", "933"]
+    
+    #not really used any more unless we run into bad results
+    numeric_js_files = [30,39,46,47,58,62,66,76,79,134,136,143,164,207,250,251,260,300,309,316,321,330,356,371,376,383,385,386,393,399,422,423,438,464,519,521,524,525,539,564,580,584,606,614,633,666,670,674,718,721,726,755,764,769,794,828,833,838,856,926,932,933,934,947,976,995]
 
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM",
      "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg",
@@ -345,11 +343,15 @@ async def downloadAssets(base):
     js_extracted.sort()
     for asset in assets:
         typeDict[asset] = "STATIC_ASSET"
-        
+
+    for js in numeric_js_files:
+        file = f"js/{js}.js"
+        typeDict[file] = "STATIC_JS"
+        assets.append(file)
+
     for js in js_extracted:
         file = f"js/{js}.js"
-        if js not in js_files_manual and file not in assets:
-#            print(f'JS FILE EXTRACTED BUT not known, please create a github issue (if one does not exist for this file) and tell us to add: {file}, did download for this run though')
+        if file not in assets:
             typeDict[file] = "DISCOVERED_JS"
             assets.append(file)
 
@@ -359,10 +361,7 @@ async def downloadAssets(base):
         file = "images/" + image
         typeDict[file] = "STATIC_IMAGE"
         assets.append(file)
-    for js in js_files_manual:
-        file = "js/" + js + ".js"
-        typeDict[file] = "STATIC_JS"
-        assets.append(file)
+
     for f in font_files:
         for file in ["fonts/" + f + ".woff", "fonts/" + f + ".woff2"]:
             typeDict[file] = "STATIC_FONT"
