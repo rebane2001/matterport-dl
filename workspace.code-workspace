@@ -1,0 +1,9 @@
+{
+	"folders": [],
+	"settings": {
+		"python.analysis.typeCheckingMode": "standard",
+		"ruff.lineLength": 9999,
+		"editor.indentSize": "tabSize",
+		"editor.tabSize": 4
+	}
+}
