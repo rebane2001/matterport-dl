@@ -6,7 +6,6 @@ Downloads virtual tours from matterport.
 Usage is either running this program with the URL/pageid as an argument or calling the initiateDownload(URL/pageid) method.
 '''
 from __future__ import annotations
-import traceback
 import urllib.parse
 from curl_cffi import requests
 from enum import Enum
@@ -560,7 +559,15 @@ def RemoteDomainsReplace(str : str):
 async def downloadCapture(pageid):
     global KNOWN_ACCESS_KEY, PROGRESS, RUN_ARGS_CONFIG_NAME
     makeDirs(pageid)
+    alias = CLA.getCommandLineArg(CommandLineArg.ALIAS)
+    if alias and not os.path.exists(alias):
+        os.symlink(pageid, alias)
     os.chdir(pageid)
+    ROOT_FILE_COPY=["JSNetProxy.js","matterport-dl.py"]
+    for fl in ROOT_FILE_COPY:
+        if not os.path.exists(fl):
+            shutil.copy2(os.path.join(BASE_MATTERPORTDL_DIR,fl),fl)
+
     CLA.SaveToFile(RUN_ARGS_CONFIG_NAME)
 
     logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S',  encoding='utf-8')
@@ -957,7 +964,7 @@ def SetupSession(use_proxy):
     OUR_SESSION = requests.AsyncSession( impersonate='chrome', max_clients=MAX_CONCURRENT_REQUESTS, proxies= ({'http': use_proxy,'https': use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", 'x-matterport-application-name':'showcase'} )
 
 
-CommandLineArg = Enum('CommandLineArg', ['ADVANCED_DOWNLOAD','PROXY','DEBUG','CONSOLE_LOG','BRUTE_JS','TILDE','BASE_FOLDER','NO_DOWNLOAD','MANUAL_HOST_REPLACEMENT','HELP'])
+CommandLineArg = Enum('CommandLineArg', ['ADVANCED_DOWNLOAD','PROXY','DEBUG','CONSOLE_LOG','BRUTE_JS','TILDE','BASE_FOLDER','ALIAS','NO_DOWNLOAD','MANUAL_HOST_REPLACEMENT','HELP'])
 @dataclass
 class CLA:
     arg : CommandLineArg
@@ -994,8 +1001,7 @@ class CLA:
                         cla.currentValue = CLA.orig_args[i+1] if not isNegativeName else ""
                     else:
                         cla.currentValue = not isNegativeName
-        for cla in CLA.all_args:
-            print(f'{cla.arg.name}=>{cla.currentValue}')
+
 
     def argConsoleName(self):
         return self.arg.name.replace("_","-").lower()
@@ -1050,15 +1056,18 @@ class CLA:
   
 
 if __name__ == "__main__":
-    
-    CLA.addCommandLineArg(CommandLineArg.TILDE,"allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run",True)
-    CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD,"downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts",True)
+    CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER,"folder to store downloaded models in (or serve from)","./downloads",itemValueHelpDisplay="dir",allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.BRUTE_JS,"downloading the range of matterports many JS files numbered 1->999.js, through trying them all rather than just the ones we know",False)
+    CLA.addCommandLineArg(CommandLineArg.PROXY,"using web proxy specified for all requests","","127.0.0.1:8866",allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.TILDE,"allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run",True)
+    CLA.addCommandLineArg(CommandLineArg.ALIAS,"create an alias symlink for the download with this name, does not override any existing (can be used when serving)","",itemValueHelpDisplay="name")
+    CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD,"downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts",True)
     CLA.addCommandLineArg(CommandLineArg.DEBUG,"debug mode enables select debug output to console or the debug/ folder mostly for developers",False,allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG,"showing all log messages in the console rather than just the log file, very spammy",False,allow_saved=False)
-    CLA.addCommandLineArg(CommandLineArg.PROXY,"using web proxy specified for all requests","","127.0.0.1:8866",allow_saved=False)
+
     CLA.addCommandLineArg(CommandLineArg.NO_DOWNLOAD,"Do not download anything (just do post download actions)",False,hidden=True,allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT,"Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after",False,hidden=True)
+
     CLA.addCommandLineArg(CommandLineArg.HELP,"",False,hidden=True,allow_saved=False)
     CLA.parseArgs()
 
@@ -1066,6 +1075,15 @@ if __name__ == "__main__":
     pageId = ""
     if len(sys.argv) > 1:
         pageId = getPageId(sys.argv[1])
+    
+    baseDir = CLA.getCommandLineArg(CommandLineArg.BASE_FOLDER)
+    isServerRun = len(sys.argv) == 4
+    if not os.path.exists(os.path.join(baseDir,pageId)) and os.path.exists(pageId) and isServerRun: #allow old rooted pages to still be served
+        baseDir="./"
+    else:
+        makeDirs(baseDir)
+        os.chdir(baseDir)
+
     existingConfigFile = os.path.join(pageId,RUN_ARGS_CONFIG_NAME)
     if os.path.exists(existingConfigFile):
         try:
@@ -1089,7 +1107,7 @@ if __name__ == "__main__":
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         httpd.serve_forever()
     else:
-        print ("Usage:\n\tFirst download the digital twin: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run only:")
+        print ("Usage:\n\tFirst download the digital twin: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run only:")
         print(CLA.getUsageStr())
         print("\tAny option can have a no prefix added (or removed if already has) to invert the option,  ie --no-proxy disables a proxy if one was enabled.  --no-advanced-download disables the default enabled advanced download.")
 
