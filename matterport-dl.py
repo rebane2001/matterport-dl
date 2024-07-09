@@ -5,7 +5,7 @@
 Downloads virtual tours from matterport.
 Usage is either running this program with the URL/pageid as an argument or calling the initiateDownload(URL/pageid) method.
 '''
-
+from __future__ import annotations
 import traceback
 import urllib.parse
 from curl_cffi import requests
@@ -21,7 +21,9 @@ import re
 import os
 import shutil
 import sys
-from typing import Any
+from typing import Any, Self, TypeVar, ClassVar
+from dataclasses import dataclass
+
 import logging
 from tqdm import tqdm
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -42,9 +44,8 @@ def makeDirs(dirname):
     pathlib.Path(dirname).mkdir(parents=True, exist_ok=True)
 
 def mainMsgLog(msg : str):
-    global CONSOLE_LOG
     logging.info(msg)
-    if not CONSOLE_LOG:
+    if not CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
         print(msg)
 
 def getModifiedName(filename : str):
@@ -95,8 +96,7 @@ async def downloadSweeps(accessurl, sweeps):
 
 
 async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_json_str, descriptor):
-    global NO_TILDA_IN_PATH
-    if NO_TILDA_IN_PATH:
+    if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~","_")
 
     await downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor)
@@ -107,13 +107,13 @@ async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_
             return await f.read()
 
 async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor):
-    global OUR_SESSION, NO_TILDA_IN_PATH, NO_DOWNLOAD
-    if NO_TILDA_IN_PATH:
+    global OUR_SESSION
+    if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~","_")
     if "/" in file:
         makeDirs(os.path.dirname(file))
 
-    if os.path.exists(file) or NO_DOWNLOAD: #skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
+    if os.path.exists(file) or CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD): #skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
         logUrlDownloadSkipped(type, file, url, descriptor)
         return
 
@@ -145,8 +145,7 @@ async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
     return result
 
 async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, isBinary=False, always_download=False):
-    global NO_TILDA_IN_PATH
-    if NO_TILDA_IN_PATH:
+    if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~","_")
 
     await downloadFile(type, shouldExist, url, file, post_data)
@@ -164,11 +163,11 @@ async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, i
 
 #Add type parameter, shortResourcePath, shouldExist
 async def downloadFile(type, shouldExist, url, file, post_data=None, always_download=False):
-    global accesskeys, NO_TILDA_IN_PATH,MAX_TASKS_SEMAPHORE, OUR_SESSION
+    global accesskeys,MAX_TASKS_SEMAPHORE, OUR_SESSION
     async with MAX_TASKS_SEMAPHORE:
         url = GetOrReplaceKey(url,False)
 
-        if NO_TILDA_IN_PATH:
+        if not CLA.getCommandLineArg(CommandLineArg.TILDE):
             file = file.replace("~","_")
 
         if "/" in file:
@@ -211,7 +210,7 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
 
 
 async def downloadGraphModels(pageid):
-    global GRAPH_DATA_REQ, MANUAL_HOST_REPLACEMENT
+    global GRAPH_DATA_REQ
     makeDirs("api/mp/models")
 
     for key in GRAPH_DATA_REQ:
@@ -220,7 +219,7 @@ async def downloadGraphModels(pageid):
         text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, "https://my.matterport.com/api/mp/models/graph",file_path, GRAPH_DATA_REQ[key], key)
         
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
-        if MANUAL_HOST_REPLACEMENT:
+        if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
             text = text.replace("https://cdn-2.matterport.com", "http://127.0.0.1:8080") #without the localhost it seems like it may try to do diff 
 
         text = re.sub(r"validUntil\"\s:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", "validUntil\":\"2099-01-01T", text)
@@ -297,7 +296,7 @@ def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParam
     
 
 async def downloadAssets(base):
-    global BRUTE_JS_DOWNLOAD, PROGRESS
+    global PROGRESS
     js_files_manual = [ #not really used any more unless we run into bad results
         "30", "46", "47", "66", "79", "134", "136", "143", "164", "250", "251", "316", "321", "356", "371", "376", "383", "386", "422", "423",
         "464", "524", "525", "539", "580", "584", "606", "614", "666", "670", "718", "721", "726", "755", "764", "828", "833", "838", "932",
@@ -387,7 +386,7 @@ async def downloadAssets(base):
     await AsyncArrayDownload(toDownload)
 
     toDownload.clear()
-    if BRUTE_JS_DOWNLOAD:
+    if CLA.getCommandLineArg(CommandLineArg.BRUTE_JS):
         for x in range(1,1000):
             file = f"js/{x}.js"
             if file not in assets:
@@ -479,7 +478,6 @@ async def downloadPics(pageid):
     await AsyncArrayDownload(toDownload)
 
 async def downloadMainAssets(pageid,accessurl):
-    global ADVANCED_DOWNLOAD_ALL, NO_TILDA_IN_PATH
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     match = re.search(r'models/([a-z0-9-_./~]*)/\{filename\}', accessurl)
@@ -487,7 +485,7 @@ async def downloadMainAssets(pageid,accessurl):
         raise Exception(f"Unable to extract access model id from url: {accessurl}")
     accessid =  match.group(1)
     basePath = f"models/{accessid}"
-    if NO_TILDA_IN_PATH:
+    if not CLA.getCommandLineArg(CommandLineArg.TILDE):
             basePath = basePath.replace("~","_")
     makeDirs(basePath)
     os.chdir(basePath)
@@ -497,17 +495,16 @@ async def downloadMainAssets(pageid,accessurl):
 
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
-    global MANUAL_HOST_REPLACEMENT
     showcaseJs = "js/showcase.js"
     with open(showcaseJs,"r",encoding="UTF-8") as f:
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)","",j)
-    if MANUAL_HOST_REPLACEMENT:
+    if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace('"/api/mp/','`${window.location.pathname}`+"api/mp/')
         j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
 
     j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
-    if MANUAL_HOST_REPLACEMENT:
+    if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace('https://static.matterport.com','')
     with open(getModifiedName(showcaseJs),"w",encoding="UTF-8") as f:
         f.write(j)
@@ -550,11 +547,10 @@ def DebugSaveFile(fileName,fileContent):
             the_file.write(fileContent)
 
 def RemoteDomainsReplace(str : str):
-    global MANUAL_HOST_REPLACEMENT
     domReplace=["static.matterport.com","cdn-2.matterport.com","cdn-1.matterport.com","mp-app-prod.global.ssl.fastly.net","events.matterport.com"]
 
     #str = str.replace('"https://static.matterport.com','`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com','`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-1.matterport.com','`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/','`${window.location.origin}${window.location.pathname}` + "').replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
-    if MANUAL_HOST_REPLACEMENT:
+    if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         for dom in domReplace:
             str = str.replace(f"https://{dom}","http://127.0.0.1:8080")
 
@@ -562,15 +558,16 @@ def RemoteDomainsReplace(str : str):
     return str
 
 async def downloadCapture(pageid):
-    global ADVANCED_DOWNLOAD_ALL, KNOWN_ACCESS_KEY, DEBUG_MODE, CONSOLE_LOG, PROGRESS, MANUAL_HOST_REPLACEMENT
+    global KNOWN_ACCESS_KEY, PROGRESS, RUN_ARGS_CONFIG_NAME
     makeDirs(pageid)
     os.chdir(pageid)
+    CLA.SaveToFile(RUN_ARGS_CONFIG_NAME)
 
     logging.basicConfig(filename='run_report.log', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S',  encoding='utf-8')
     
-    if DEBUG_MODE:
+    if CLA.getCommandLineArg(CommandLineArg.DEBUG):
         makeDirs("debug")
-    if CONSOLE_LOG:
+    if CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
         logging.getLogger().addHandler(logging.StreamHandler())
     logging.debug('Started up a download run')
     page_root_dir = os.path.abspath('.')
@@ -579,7 +576,7 @@ async def downloadCapture(pageid):
     base_page_text=""
     try:
         base_page_text = await downloadFileAndGetText("MAIN", True, url, "index.html",always_download=True)
-        if DEBUG_MODE: DebugSaveFile("base_page.html",base_page_text)  # noqa: E701
+        if CLA.getCommandLineArg(CommandLineArg.DEBUG): DebugSaveFile("base_page.html",base_page_text)  # noqa: E701
 
     except Exception as error:
         if "certificate verify failed" in str(error) or "SSL certificate problem" in str(error):
@@ -611,18 +608,23 @@ async def downloadCapture(pageid):
     await downloadGraphModels(pageid)
     
 
-    if ADVANCED_DOWNLOAD_ALL:
+    if CLA.getCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD):
         await AdvancedAssetDownload(base_page_text)
     
     
     # Automatic redirect if GET param isn't correct
     forcedProxyBase="window.location.origin"
     #forcedProxyBase='"http://127.0.0.1:9000"'
-    injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; };window._ProxyBase=' + forcedProxyBase + ';'
+    injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; };window._NoTilde=' + ("false" if CLA.getCommandLineArg(CommandLineArg.TILDE) else "true") + ';window._ProxyBase=' + forcedProxyBase + ';'
     content = base_page_text.replace(staticbase,".")
-    if MANUAL_HOST_REPLACEMENT:
+    proxyAdd=""
+    if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         content = RemoteDomainsReplace(content)
-    content = content.replace("<head>",f"<head><script>{injectedjs}</script><script blocking='render' src='JSNetProxy.js'></script>")
+    else:
+        content = re.sub(r'(?P<preDomain>src\s*=\s*[''"])https?://[^/''"]+/', r'\g<preDomain>', content,flags=re.IGNORECASE)
+        proxyAdd="<script blocking='render' src='JSNetProxy.js'></script>"
+
+    content = content.replace("<head>",f"<head><script>{injectedjs}</script>{proxyAdd}")
     with open(getModifiedName("index.html"), "w", encoding="UTF-8") as f:
         f.write(content )
 
@@ -647,7 +649,6 @@ async def downloadCapture(pageid):
     mainMsgLog(f"Done, {PROGRESS}!")
 
 async def AdvancedAssetDownload(base_page_text : str):
-    global DEBUG_MODE
     ADV_CROP_FETCH = [
             {
                 "start":"width=512&crop=1024,1024,",
@@ -681,7 +682,7 @@ async def AdvancedAssetDownload(base_page_text : str):
             preload_json = json.loads(match.group(1)) #in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
             base_cache_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
 
-        if DEBUG_MODE:
+        if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("advanced_model_data_extracted.json", json.dumps( base_cache_node, indent="\t") )  # noqa: E701
             DebugSaveFile("advanced_model_data_from_GetModelDetails.json", json.dumps( base_node, indent="\t") )  # noqa: E701
 
@@ -693,7 +694,7 @@ async def AdvancedAssetDownload(base_page_text : str):
             base_node["locations"] = base_cache_node["locations"]
                 
         toDownload : list[AsyncDownloadItem] = []
-        if DEBUG_MODE:
+        if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             mainMsgLog(f"AdvancedDownload meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tilesets: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
         for mesh in base_node["assets"]["meshes"]:
@@ -831,10 +832,10 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         return query
 
     def do_GET(self):
-        global NO_TILDA_IN_PATH, BASE_MATTERPORTDL_DIR
+        global BASE_MATTERPORTDL_DIR
         redirect_msg=None
         orig_request = self.path
-        if NO_TILDA_IN_PATH:
+        if not CLA.getCommandLineArg(CommandLineArg.TILDE):
             self.path = self.path.replace("~","_")
 
         orig_raw_path = raw_path = self.getRawPath()
@@ -886,10 +887,8 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
         if redirect_msg is not None or orig_request != self.path:
             logging.info(f'Redirecting {orig_request} => {self.path} as {redirect_msg}')
-
-
         SimpleHTTPRequestHandler.do_GET(self)
-        return
+
     def isPotentialModifiedFile(self):
         posModifiedExt = ["js","json","html"]
         raw_path = self.getRawPath()
@@ -939,17 +938,11 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         return res
 
 
-ADVANCED_DOWNLOAD_ALL=False
-BRUTE_JS_DOWNLOAD=False
-NO_DOWNLOAD=False #don't actually attempt to download anything
-NO_TILDA_IN_PATH=False
-MANUAL_HOST_REPLACEMENT=False
-DEBUG_MODE=False # will explicitly use print rather than logging to always log
-CONSOLE_LOG=False
+
 GRAPH_DATA_REQ = {}
 OUR_SESSION : requests.AsyncSession
 MAX_TASKS_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
-
+RUN_ARGS_CONFIG_NAME = "run_args.json"
 
 def openDirReadGraphReqs(path,pageId):
     for root, dirs, filenames in os.walk(path):
@@ -963,34 +956,129 @@ def SetupSession(use_proxy):
     global OUR_SESSION,MAX_CONCURRENT_REQUESTS
     OUR_SESSION = requests.AsyncSession( impersonate='chrome', max_clients=MAX_CONCURRENT_REQUESTS, proxies= ({'http': use_proxy,'https': use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", 'x-matterport-application-name':'showcase'} )
 
-def getCommandLineArg(name, has_value):
-    for i in range(1,len(sys.argv)):
-        if sys.argv[i] == name:
-            sys.argv.pop(i)
-            if has_value:
-                return sys.argv.pop(i)
-            else:
-                return True
-    return False
+
+CommandLineArg = Enum('CommandLineArg', ['ADVANCED_DOWNLOAD','PROXY','DEBUG','CONSOLE_LOG','BRUTE_JS','TILDE','BASE_FOLDER','NO_DOWNLOAD','MANUAL_HOST_REPLACEMENT','HELP'])
+@dataclass
+class CLA:
+    arg : CommandLineArg
+    description : str
+    hasValue : bool
+    itemValueHelpDisplay : str
+    defaultValue : Any
+    currentValue : Any
+    hidden : bool
+    allow_saving: bool
+    all_args : ClassVar[list[CLA]] = []
+    orig_args : ClassVar[list[str]] = [] #we store them so we can reparse them after a config load
+    @staticmethod
+    def addCommandLineArg(arg : CommandLineArg, description : str, defaultValue : Any, itemValueHelpDisplay : str = "",hidden=False,allow_saved=True):
+        """itemValueHelpDisplay is the name to show in help for after the --arg   ie for --proxy '127.0.0.1:8080'"""
+        cla = CLA(arg=arg,currentValue=defaultValue,defaultValue=defaultValue,description=description,hasValue=itemValueHelpDisplay != "",itemValueHelpDisplay=itemValueHelpDisplay,hidden=hidden,allow_saving=allow_saved)
+        if len(CLA.orig_args) == 0:
+            CLA.orig_args = sys.argv.copy()
+        for i in range(len(sys.argv)-1,-1,-1):
+            isNegativeName = sys.argv[i] == f'--no-{cla.argConsoleName()}'
+            if sys.argv[i] == f'--{cla.argConsoleName()}' or isNegativeName:
+                sys.argv.pop(i)
+                if cla.hasValue and not isNegativeName:
+                    sys.argv.pop(i)
+        CLA.all_args.append(cla)
+
+    @staticmethod
+    def parseArgs():
+        for i in range(1,len(CLA.orig_args)):
+            for cla in CLA.all_args:
+                isNegativeName = CLA.orig_args[i] == f'--no-{cla.argConsoleName()}'
+                if CLA.orig_args[i] == f'--{cla.argConsoleName()}' or isNegativeName:
+                    if cla.hasValue:
+                        cla.currentValue = CLA.orig_args[i+1] if not isNegativeName else ""
+                    else:
+                        cla.currentValue = not isNegativeName
+        for cla in CLA.all_args:
+            print(f'{cla.arg.name}=>{cla.currentValue}')
+
+    def argConsoleName(self):
+        return self.arg.name.replace("_","-").lower()
+    
+    
+    @staticmethod
+    def LoadFromFile(file : str):
+        with open(file, "r", encoding="UTF-8") as f:
+            config = json.loads(f.read())
+            for arg in CLA.all_args:
+                if arg.arg.name in config:
+                    arg.currentValue = config[arg.arg.name]
+
+    @staticmethod
+    def SaveToFile(file : str):
+        config : dict[str,Any] = {}
+        for arg in CLA.all_args:
+            if arg.allow_saving:
+                config[arg.arg.name] = arg.currentValue
+        with open(file, 'w') as the_file:
+            the_file.write(json.dumps( config, indent="\t"))
+        
+
+    @staticmethod
+    def getUsageStr(indent=2, forServerNotDownload = False):
+        ret=""
+        for arg in CLA.all_args:
+            noprefix=""
+            if arg.hidden:
+                continue
+            desc = arg.description
+            
+            if arg.currentValue:
+                if not arg.hasValue:
+                    noprefix="no-"
+                    desc = f"disables {desc}"
+                else:
+                    desc = f"{desc} currently: {arg.currentValue}"
+
+            for _ in range(indent):
+                ret += "\t"
+            ret +=f"--{noprefix}{arg.argConsoleName()} {arg.itemValueHelpDisplay} -- {desc}\n"
+        return ret.rstrip()
+    
+    @staticmethod
+    def getCommandLineArg(arg : CommandLineArg):
+        cla = next(filter( lambda c: c.arg == arg, CLA.all_args), None)
+        if not cla:
+            raise Exception(f"Invalid command line arg requested???: {arg}")
+        return cla.currentValue
+    
+  
 
 if __name__ == "__main__":
-    NO_TILDA_IN_PATH = getCommandLineArg("--no-tilda", False)
-    ADVANCED_DOWNLOAD_ALL = getCommandLineArg("--advanced-download", False)
-    BRUTE_JS_DOWNLOAD = getCommandLineArg("--brute-js", False)
-    DEBUG_MODE = getCommandLineArg("--debug",False)
-    CONSOLE_LOG = getCommandLineArg("--console-log",False)
-    PROXY = getCommandLineArg("--proxy", True)
+    
+    CLA.addCommandLineArg(CommandLineArg.TILDE,"allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run",True)
+    CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD,"downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts",True)
+    CLA.addCommandLineArg(CommandLineArg.BRUTE_JS,"downloading the range of matterports many JS files numbered 1->999.js, through trying them all rather than just the ones we know",False)
+    CLA.addCommandLineArg(CommandLineArg.DEBUG,"debug mode enables select debug output to console or the debug/ folder mostly for developers",False,allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG,"showing all log messages in the console rather than just the log file, very spammy",False,allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.PROXY,"using web proxy specified for all requests","","127.0.0.1:8866",allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.NO_DOWNLOAD,"Do not download anything (just do post download actions)",False,hidden=True,allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT,"Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after",False,hidden=True)
+    CLA.addCommandLineArg(CommandLineArg.HELP,"",False,hidden=True,allow_saved=False)
+    CLA.parseArgs()
 
-    SetupSession(PROXY)
+    SetupSession(CLA.getCommandLineArg(CommandLineArg.PROXY))
     pageId = ""
     if len(sys.argv) > 1:
         pageId = getPageId(sys.argv[1])
+    existingConfigFile = os.path.join(pageId,RUN_ARGS_CONFIG_NAME)
+    if os.path.exists(existingConfigFile):
+        try:
+            CLA.LoadFromFile(existingConfigFile)
+            CLA.parseArgs()
+        except:
+            pass
     openDirReadGraphReqs( os.path.join(BASE_MATTERPORTDL_DIR, "graph_posts"), pageId)
-    if len(sys.argv) == 2:
+    if len(sys.argv) == 2 and not CLA.getCommandLineArg(CommandLineArg.HELP):
         asyncio.run(initiateDownload(pageId))
 
             
-    elif len(sys.argv) == 4:
+    elif len(sys.argv) == 4 and not CLA.getCommandLineArg(CommandLineArg.HELP):
         os.chdir(getPageId(pageId))
         try:
             logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
@@ -1001,4 +1089,8 @@ if __name__ == "__main__":
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         httpd.serve_forever()
     else:
-        print ("Usage:\n\tFirst Download: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\t--proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support\n\t--no-tilda -- Use this option to remove the tilda from file paths (say for linux)\n\t--brute-js -- Use this option to ry and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)")
+        print ("Usage:\n\tFirst download the digital twin: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run only:")
+        print(CLA.getUsageStr())
+        print("\tAny option can have a no prefix added (or removed if already has) to invert the option,  ie --no-proxy disables a proxy if one was enabled.  --no-advanced-download disables the default enabled advanced download.")
+
+        # --proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support\n\t--no-tilde -- Use this option to remove the tilde from file paths (say for linux)\n\t--brute-js -- Use this option to ry and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)")

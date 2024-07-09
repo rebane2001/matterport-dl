@@ -1,10 +1,10 @@
 
 const _hostRegex = new RegExp( /(https?:\/\/[^/]+)/,"i");
-const _NoTilda = true;
+
 window._replaceHost = function(str){
 	if (! str)
 		return str;
-	if (_NoTilda)
+	if (window._NoTilde)
 		str = str.replace("~","_")
 	return str.replace(_hostRegex,window._ProxyBase);
 }
