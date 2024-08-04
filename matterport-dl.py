@@ -969,13 +969,14 @@ class CLA:
     currentValue: Any
     hidden: bool
     allow_saving: bool
+    applies_to_serving: bool
     all_args: ClassVar[list[CLA]] = []
     orig_args: ClassVar[list[str]] = []  # we store them so we can reparse them after a config load
 
     @staticmethod
-    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True):
+    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True,applies_to_serving=False):
         """itemValueHelpDisplay is the name to show in help for after the --arg   ie for --proxy '127.0.0.1:8080'"""
-        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved)
+        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved,applies_to_serving=applies_to_serving)
         if len(CLA.orig_args) == 0:
             CLA.orig_args = sys.argv.copy()
         for i in range(len(sys.argv) - 1, -1, -1):
@@ -1024,6 +1025,9 @@ class CLA:
             noprefix = ""
             if arg.hidden:
                 continue
+            if forServerNotDownload and not arg.applies_to_serving:
+                continue
+
             desc = arg.description
 
             if arg.currentValue:
@@ -1047,10 +1051,10 @@ class CLA:
 
 
 if __name__ == "__main__":
-    CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to_serving=True)
     CLA.addCommandLineArg(CommandLineArg.BRUTE_JS, "downloading the range of matterports many JS files numbered 1->999.js, through trying them all rather than just the ones we know", False)
     CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
-    CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run", True)
+    CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run", sys.platform == "win32")
     CLA.addCommandLineArg(CommandLineArg.ALIAS, "create an alias symlink for the download with this name, does not override any existing (can be used when serving)", "", itemValueHelpDisplay="name")
     CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD, "downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts", True)
     CLA.addCommandLineArg(CommandLineArg.DEBUG, "debug mode enables select debug output to console or the debug/ folder mostly for developers", False, allow_saved=False)
@@ -1097,8 +1101,8 @@ if __name__ == "__main__":
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         httpd.serve_forever()
     else:
-        print("Usage:\n\tFirst download the digital twin: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run only:")
+        print("Usage:\n\tFirst download the digital twin: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
         print(CLA.getUsageStr())
+        print("\tServing options:")
+        print(CLA.getUsageStr(forServerNotDownload=True))
         print("\tAny option can have a no prefix added (or removed if already has) to invert the option,  ie --no-proxy disables a proxy if one was enabled.  --no-advanced-download disables the default enabled advanced download.")
-
-        # --proxy 127.0.0.1:1234 -- to have it use this web proxy\n\t--advanced-download -- Use this option to try and download the cropped files for dollhouse/floorplan support\n\t--no-tilde -- Use this option to remove the tilde from file paths (say for linux)\n\t--brute-js -- Use this option to ry and download all js files 0->999 rather than just the ones detected.  Useful if you see 404 errors for js/XXX.js (where  XXX is a number)")
