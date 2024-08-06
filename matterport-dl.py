@@ -100,11 +100,11 @@ async def downloadSweeps(accessurl, sweeps):
     await AsyncArrayDownload(toDownload)
 
 
-async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_json_str, descriptor):
+async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_json_str, descriptor, always_download=False):
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~", "_")
 
-    await downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor)
+    await downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor, always_download)
     if not os.path.exists(file):
         return ""
     else:
@@ -112,14 +112,14 @@ async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_
             return await f.read()
 
 
-async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor):
+async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor, always_download=False):
     global OUR_SESSION
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~", "_")
     if "/" in file:
         makeDirs(os.path.dirname(file))
 
-    if os.path.exists(file) or CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD):  # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
+    if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
         logUrlDownloadSkipped(type, file, url, descriptor)
         return
 
@@ -155,7 +155,7 @@ async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, i
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~", "_")
 
-    await downloadFile(type, shouldExist, url, file, post_data)
+    await downloadFile(type, shouldExist, url, file, post_data, always_download)
     if not os.path.exists(file):
         return ""
     else:
@@ -182,7 +182,7 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
         if "?" in file:
             file = file.split("?")[0]
 
-        if os.path.exists(file) and not always_download:  # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+        if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
             logUrlDownloadSkipped(type, file, url, "")
             return
         reqId = logUrlDownloadStart(type, file, url, "", shouldExist)
@@ -221,7 +221,7 @@ async def downloadGraphModels(pageid):
     for key in GRAPH_DATA_REQ:
         file_path_base = f"api/mp/models/graph_{key}"
         file_path = f"{file_path_base}.json"
-        text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, "https://my.matterport.com/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key)
+        text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, "https://my.matterport.com/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key, CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
 
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
@@ -958,7 +958,7 @@ def SetupSession(use_proxy):
     OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS, proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "NO_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "HELP"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "NO_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "HELP"])
 
 
 @dataclass
@@ -974,11 +974,12 @@ class CLA:
     applies_to_serving: bool
     all_args: ClassVar[list[CLA]] = []
     orig_args: ClassVar[list[str]] = []  # we store them so we can reparse them after a config load
+    value_cache: ClassVar[dict[CommandLineArg, Any]] = {}  # faster lookup
 
     @staticmethod
-    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True,applies_to_serving=False):
+    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True, applies_to_serving=False):
         """itemValueHelpDisplay is the name to show in help for after the --arg   ie for --proxy '127.0.0.1:8080'"""
-        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved,applies_to_serving=applies_to_serving)
+        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved, applies_to_serving=applies_to_serving)
         if len(CLA.orig_args) == 0:
             CLA.orig_args = sys.argv.copy()
         for i in range(len(sys.argv) - 1, -1, -1):
@@ -1063,6 +1064,7 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG, "showing all log messages in the console rather than just the log file, very spammy", False, allow_saved=False)
 
     CLA.addCommandLineArg(CommandLineArg.NO_DOWNLOAD, "Do not download anything (just do post download actions)", False, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
 
     CLA.addCommandLineArg(CommandLineArg.HELP, "", False, hidden=True, allow_saved=False)
