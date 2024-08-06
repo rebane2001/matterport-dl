@@ -244,7 +244,7 @@ ProgressType = Enum("ProgressType", ["Request", "Success", "Skipped", "Failed404
 
 class ProgressStats:
     def __str__(self):
-        return f"Total fetches: {self.TotalPosRequests()} {self.ValStr(ProgressType.Skipped)} actual {self.ValStr(ProgressType.Request)} Already downloaded {self.ValStr(ProgressType.Success)} {self.ValStr(ProgressType.Failed403)} {self.ValStr(ProgressType.Failed404)} {self.ValStr(ProgressType.FailedUnknown)}"
+        return f"Total fetches: {self.TotalPosRequests()} {self.ValStr(ProgressType.Skipped)} actual {self.ValStr(ProgressType.Request)} {self.ValStr(ProgressType.Success)} {self.ValStr(ProgressType.Failed403)} {self.ValStr(ProgressType.Failed404)} {self.ValStr(ProgressType.FailedUnknown)}"
 
     def __init__(self):
         self.stats: dict[ProgressType, int] = dict()
@@ -474,11 +474,12 @@ async def downloadPlugins(pageid):
 
 
 async def downloadPics(pageid):
+    # All these should already be downloaded through AdvancedAssetDownload likely they wont work here without a different access key any more....
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     toDownload: list[AsyncDownloadItem] = []
     for image in modeldata["images"]:
-        toDownload.append(AsyncDownloadItem("MODEL_IMAGES", True, image["src"], urlparse(image["src"]).path[1:]))
+        toDownload.append(AsyncDownloadItem("MODEL_IMAGES", True, image["src"], urlparse(image["src"]).path[1:]))  # want want to use signed_src or download_url?
     await AsyncArrayDownload(toDownload)
 
 
@@ -681,12 +682,20 @@ async def AdvancedAssetDownload(base_page_text: str):
     try:
         base_node: Any = None  # lets try to use this now first seems to be more accurate the precache key can be invalid in comparison
         base_cache_node: Any = None
+        base_node_snapshots: Any = None
         try:
-            with open("api/mp/models/graph_GetModelDetails_orig.json", "r", encoding="UTF-8") as f:
+            with open("api/mp/models/graph_GetModelDetails.json", "r", encoding="UTF-8") as f:
                 graphModelDetailsJson = json.loads(f.read())
                 base_node = graphModelDetailsJson["data"]["model"]
         except Exception:
             logging.exception("Unable to open graph model details output json something probably wrong.....")
+
+        try:
+            with open("api/mp/models/graph_GetSnapshots.json", "r", encoding="UTF-8") as f:
+                graphModelSnapshotsJson = json.loads(f.read())
+                base_node_snapshots = graphModelSnapshotsJson["data"]["model"]
+        except Exception:
+            logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
 
         match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
         if match:
@@ -696,6 +705,7 @@ async def AdvancedAssetDownload(base_page_text: str):
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("advanced_model_data_extracted.json", json.dumps(base_cache_node, indent="\t"))  # noqa: E701
             DebugSaveFile("advanced_model_data_from_GetModelDetails.json", json.dumps(base_node, indent="\t"))  # noqa: E701
+            DebugSaveFile("advanced_model_data_from_GetSnapshots.json", json.dumps(base_node_snapshots, indent="\t"))  # noqa: E701
 
         if not base_cache_node:
             base_cache_node = base_node
@@ -706,10 +716,13 @@ async def AdvancedAssetDownload(base_page_text: str):
 
         toDownload: list[AsyncDownloadItem] = []
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
-            mainMsgLog(f"AdvancedDownload meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tilesets: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
+            mainMsgLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tilesets: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
         for mesh in base_node["assets"]["meshes"]:
             toDownload.append(AsyncDownloadItem("ADV_MODEL_MESH", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:]))  # not expecting the non 50k one to work but mgiht as well try
+
+        for photo in base_node_snapshots["assets"]["photos"]:
+            toDownload.append(AsyncDownloadItem("ADV_MODEL_IMAGES", True, photo["presentationUrl"], urlparse(photo["presentationUrl"]).path[1:]))
 
         # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
         for location in base_node["locations"]:
