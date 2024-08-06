@@ -21,7 +21,7 @@ import re
 import os
 import shutil
 import sys
-from typing import Any, Self, TypeVar, ClassVar
+from typing import Any, Self, TypeVar, ClassVar, cast
 from dataclasses import dataclass
 
 import logging
@@ -41,8 +41,15 @@ MAX_CONCURRENT_TASKS = 64  # while we could theoretically leave this unbound jus
 accesskeys = []
 
 
+dirsMadeCache: dict[str, bool] = {}
+
+
 def makeDirs(dirname):
+    global dirsMadeCache
+    if dirname in dirsMadeCache:
+        return
     pathlib.Path(dirname).mkdir(parents=True, exist_ok=True)
+    dirsMadeCache[dirname] = True
 
 
 def mainMsgLog(msg: str):
@@ -139,7 +146,7 @@ async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
     global PROGRESS
     useTmpFileName = ""
     async with aiofiles.tempfile.NamedTemporaryFile(delete_on_close=False) as tmpFile:  # type: ignore
-        useTmpFileName = tmpFile.name
+        useTmpFileName = cast(str, tmpFile.name)
 
     result = await downloadFileAndGetText(type, shouldExist, url, useTmpFileName, post_data)
     PROGRESS.Increment(ProgressType.Request, -1)
@@ -301,6 +308,9 @@ def logUrlDownloadStart(type, localTarget, url, additionalParams, shouldExist):
 
 
 def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParams, shouldExist, requestID, optionalResult=None):
+    global CLA
+    if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD):
+        return
     if optionalResult:
         optionalResult = f"Result: {optionalResult}"
     else:
@@ -731,7 +741,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                     try:
                         # chunkText = downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], None, True)
                         await downloadFile("ADV_TILESET_GLB", False, url, urlparse(url).path[1:])
-                        chunkText = requests.get(url).text  # not sure how to do this from file open yet....
+                        chunkText = (await OUR_SESSION.get(url)).text  # not sure how to do this from file open yet....
                         chunks = re.findall(r"(lod[0-9]_[a-zA-Z0-9-_]+\.(jpg|ktx2))", chunkText)
                         # print("Found chunks: ",chunks)
                         chunks.sort()
@@ -992,6 +1002,7 @@ class CLA:
 
     @staticmethod
     def parseArgs():
+        CLA.value_cache = {}
         for i in range(1, len(CLA.orig_args)):
             for cla in CLA.all_args:
                 isNegativeName = CLA.orig_args[i] == f"--no-{cla.argConsoleName()}"
@@ -1047,9 +1058,12 @@ class CLA:
 
     @staticmethod
     def getCommandLineArg(arg: CommandLineArg):
+        if arg in CLA.value_cache:
+            return CLA.value_cache[arg]
         cla = next(filter(lambda c: c.arg == arg, CLA.all_args), None)
         if not cla:
             raise Exception(f"Invalid command line arg requested???: {arg}")
+        CLA.value_cache[arg] = cla.currentValue
         return cla.currentValue
 
 
