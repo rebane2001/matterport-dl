@@ -72,8 +72,12 @@ window.XMLHttpRequest = window.nv_XMLHttpRequest;
 window.fetch = window.nv_fetch;
 window.oldAppendChild = Element.prototype.appendChild;
 Element.prototype.appendChild = function() {
-	if (arguments.length > 0 && (arguments[0]?.tagName == "SCRIPT" || arguments[0]?.tagName == "IMG") && arguments[0].src)
-		arguments[0].src = window._replaceHost(arguments[0].src);
+	if (arguments.length > 0) {
+		if ( (arguments[0]?.tagName == "SCRIPT" || arguments[0]?.tagName == "IMG") && arguments[0].src)
+			arguments[0].src = window._replaceHost(arguments[0].src);
+		else if ( arguments[0]?.tagName == "DIV" && arguments[0].style?.backgroundImage?.startsWith("url"))
+			arguments[0].style.backgroundImage = window._replaceHost(arguments[0].style?.backgroundImage);
+	}
     return window.oldAppendChild.apply(this, arguments);
 };
 

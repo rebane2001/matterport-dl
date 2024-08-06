@@ -21,7 +21,7 @@ import re
 import os
 import shutil
 import sys
-from typing import Any, Self, TypeVar, ClassVar
+from typing import Any, Self, TypeVar, ClassVar, cast
 from dataclasses import dataclass
 
 import logging
@@ -41,8 +41,15 @@ MAX_CONCURRENT_TASKS = 64  # while we could theoretically leave this unbound jus
 accesskeys = []
 
 
+dirsMadeCache: dict[str, bool] = {}
+
+
 def makeDirs(dirname):
+    global dirsMadeCache
+    if dirname in dirsMadeCache:
+        return
     pathlib.Path(dirname).mkdir(parents=True, exist_ok=True)
+    dirsMadeCache[dirname] = True
 
 
 def mainMsgLog(msg: str):
@@ -100,11 +107,11 @@ async def downloadSweeps(accessurl, sweeps):
     await AsyncArrayDownload(toDownload)
 
 
-async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_json_str, descriptor):
+async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_json_str, descriptor, always_download=False):
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~", "_")
 
-    await downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor)
+    await downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor, always_download)
     if not os.path.exists(file):
         return ""
     else:
@@ -112,14 +119,14 @@ async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_
             return await f.read()
 
 
-async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor):
+async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor, always_download=False):
     global OUR_SESSION
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~", "_")
     if "/" in file:
         makeDirs(os.path.dirname(file))
 
-    if os.path.exists(file) or CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD):  # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
+    if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
         logUrlDownloadSkipped(type, file, url, descriptor)
         return
 
@@ -139,7 +146,7 @@ async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
     global PROGRESS
     useTmpFileName = ""
     async with aiofiles.tempfile.NamedTemporaryFile(delete_on_close=False) as tmpFile:  # type: ignore
-        useTmpFileName = tmpFile.name
+        useTmpFileName = cast(str, tmpFile.name)
 
     result = await downloadFileAndGetText(type, shouldExist, url, useTmpFileName, post_data)
     PROGRESS.Increment(ProgressType.Request, -1)
@@ -155,7 +162,7 @@ async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, i
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~", "_")
 
-    await downloadFile(type, shouldExist, url, file, post_data)
+    await downloadFile(type, shouldExist, url, file, post_data, always_download)
     if not os.path.exists(file):
         return ""
     else:
@@ -182,7 +189,7 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
         if "?" in file:
             file = file.split("?")[0]
 
-        if os.path.exists(file) and not always_download:  # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+        if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
             logUrlDownloadSkipped(type, file, url, "")
             return
         reqId = logUrlDownloadStart(type, file, url, "", shouldExist)
@@ -221,7 +228,7 @@ async def downloadGraphModels(pageid):
     for key in GRAPH_DATA_REQ:
         file_path_base = f"api/mp/models/graph_{key}"
         file_path = f"{file_path_base}.json"
-        text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, "https://my.matterport.com/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key)
+        text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, "https://my.matterport.com/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key, CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
 
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
@@ -237,7 +244,7 @@ ProgressType = Enum("ProgressType", ["Request", "Success", "Skipped", "Failed404
 
 class ProgressStats:
     def __str__(self):
-        return f"Total fetches: {self.TotalPosRequests()} {self.ValStr(ProgressType.Skipped)} actual {self.ValStr(ProgressType.Request)} Already downloaded {self.ValStr(ProgressType.Success)} {self.ValStr(ProgressType.Failed403)} {self.ValStr(ProgressType.Failed404)} {self.ValStr(ProgressType.FailedUnknown)}"
+        return f"Total fetches: {self.TotalPosRequests()} {self.ValStr(ProgressType.Skipped)} actual {self.ValStr(ProgressType.Request)} {self.ValStr(ProgressType.Success)} {self.ValStr(ProgressType.Failed403)} {self.ValStr(ProgressType.Failed404)} {self.ValStr(ProgressType.FailedUnknown)}"
 
     def __init__(self):
         self.stats: dict[ProgressType, int] = dict()
@@ -301,6 +308,9 @@ def logUrlDownloadStart(type, localTarget, url, additionalParams, shouldExist):
 
 
 def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParams, shouldExist, requestID, optionalResult=None):
+    global CLA
+    if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD):
+        return
     if optionalResult:
         optionalResult = f"Result: {optionalResult}"
     else:
@@ -464,11 +474,12 @@ async def downloadPlugins(pageid):
 
 
 async def downloadPics(pageid):
+    # All these should already be downloaded through AdvancedAssetDownload likely they wont work here without a different access key any more....
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     toDownload: list[AsyncDownloadItem] = []
     for image in modeldata["images"]:
-        toDownload.append(AsyncDownloadItem("MODEL_IMAGES", True, image["src"], urlparse(image["src"]).path[1:]))
+        toDownload.append(AsyncDownloadItem("MODEL_IMAGES", True, image["src"], urlparse(image["src"]).path[1:]))  # want want to use signed_src or download_url?
     await AsyncArrayDownload(toDownload)
 
 
@@ -493,12 +504,14 @@ def patchShowcase():
     showcaseJs = "js/showcase.js"
     with open(showcaseJs, "r", encoding="UTF-8") as f:
         j = f.read()
-    j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)
+    j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)  # old
+    j = j.replace("this.urlContainer.expires", "Date.now()")  # newer
+    # j = j.replace("this.onStale","this.onStal") #even newer
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace('"/api/mp/', '`${window.location.pathname}`+"api/mp/')
         j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
 
-    j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
+    j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.ru.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace("https://static.matterport.com", "")
     with open(getModifiedName(showcaseJs), "w", encoding="UTF-8") as f:
@@ -669,12 +682,20 @@ async def AdvancedAssetDownload(base_page_text: str):
     try:
         base_node: Any = None  # lets try to use this now first seems to be more accurate the precache key can be invalid in comparison
         base_cache_node: Any = None
+        base_node_snapshots: Any = None
         try:
-            with open("api/mp/models/graph_GetModelDetails_orig.json", "r", encoding="UTF-8") as f:
+            with open("api/mp/models/graph_GetModelDetails.json", "r", encoding="UTF-8") as f:
                 graphModelDetailsJson = json.loads(f.read())
                 base_node = graphModelDetailsJson["data"]["model"]
         except Exception:
             logging.exception("Unable to open graph model details output json something probably wrong.....")
+
+        try:
+            with open("api/mp/models/graph_GetSnapshots.json", "r", encoding="UTF-8") as f:
+                graphModelSnapshotsJson = json.loads(f.read())
+                base_node_snapshots = graphModelSnapshotsJson["data"]["model"]
+        except Exception:
+            logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
 
         match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
         if match:
@@ -684,6 +705,7 @@ async def AdvancedAssetDownload(base_page_text: str):
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("advanced_model_data_extracted.json", json.dumps(base_cache_node, indent="\t"))  # noqa: E701
             DebugSaveFile("advanced_model_data_from_GetModelDetails.json", json.dumps(base_node, indent="\t"))  # noqa: E701
+            DebugSaveFile("advanced_model_data_from_GetSnapshots.json", json.dumps(base_node_snapshots, indent="\t"))  # noqa: E701
 
         if not base_cache_node:
             base_cache_node = base_node
@@ -694,10 +716,13 @@ async def AdvancedAssetDownload(base_page_text: str):
 
         toDownload: list[AsyncDownloadItem] = []
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
-            mainMsgLog(f"AdvancedDownload meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tilesets: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
+            mainMsgLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tilesets: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
         for mesh in base_node["assets"]["meshes"]:
             toDownload.append(AsyncDownloadItem("ADV_MODEL_MESH", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:]))  # not expecting the non 50k one to work but mgiht as well try
+
+        for photo in base_node_snapshots["assets"]["photos"]:
+            toDownload.append(AsyncDownloadItem("ADV_MODEL_IMAGES", True, photo["presentationUrl"], urlparse(photo["presentationUrl"]).path[1:]))
 
         # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
         for location in base_node["locations"]:
@@ -729,7 +754,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                     try:
                         # chunkText = downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], None, True)
                         await downloadFile("ADV_TILESET_GLB", False, url, urlparse(url).path[1:])
-                        chunkText = requests.get(url).text  # not sure how to do this from file open yet....
+                        chunkText = (await OUR_SESSION.get(url)).text  # not sure how to do this from file open yet....
                         chunks = re.findall(r"(lod[0-9]_[a-zA-Z0-9-_]+\.(jpg|ktx2))", chunkText)
                         # print("Found chunks: ",chunks)
                         chunks.sort()
@@ -956,7 +981,7 @@ def SetupSession(use_proxy):
     OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS, proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "NO_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "HELP"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "NO_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "HELP"])
 
 
 @dataclass
@@ -972,11 +997,12 @@ class CLA:
     applies_to_serving: bool
     all_args: ClassVar[list[CLA]] = []
     orig_args: ClassVar[list[str]] = []  # we store them so we can reparse them after a config load
+    value_cache: ClassVar[dict[CommandLineArg, Any]] = {}  # faster lookup
 
     @staticmethod
-    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True,applies_to_serving=False):
+    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True, applies_to_serving=False):
         """itemValueHelpDisplay is the name to show in help for after the --arg   ie for --proxy '127.0.0.1:8080'"""
-        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved,applies_to_serving=applies_to_serving)
+        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved, applies_to_serving=applies_to_serving)
         if len(CLA.orig_args) == 0:
             CLA.orig_args = sys.argv.copy()
         for i in range(len(sys.argv) - 1, -1, -1):
@@ -989,6 +1015,7 @@ class CLA:
 
     @staticmethod
     def parseArgs():
+        CLA.value_cache = {}
         for i in range(1, len(CLA.orig_args)):
             for cla in CLA.all_args:
                 isNegativeName = CLA.orig_args[i] == f"--no-{cla.argConsoleName()}"
@@ -1044,9 +1071,12 @@ class CLA:
 
     @staticmethod
     def getCommandLineArg(arg: CommandLineArg):
+        if arg in CLA.value_cache:
+            return CLA.value_cache[arg]
         cla = next(filter(lambda c: c.arg == arg, CLA.all_args), None)
         if not cla:
             raise Exception(f"Invalid command line arg requested???: {arg}")
+        CLA.value_cache[arg] = cla.currentValue
         return cla.currentValue
 
 
@@ -1061,6 +1091,7 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG, "showing all log messages in the console rather than just the log file, very spammy", False, allow_saved=False)
 
     CLA.addCommandLineArg(CommandLineArg.NO_DOWNLOAD, "Do not download anything (just do post download actions)", False, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
 
     CLA.addCommandLineArg(CommandLineArg.HELP, "", False, hidden=True, allow_saved=False)
