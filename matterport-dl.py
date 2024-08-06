@@ -493,12 +493,14 @@ def patchShowcase():
     showcaseJs = "js/showcase.js"
     with open(showcaseJs, "r", encoding="UTF-8") as f:
         j = f.read()
-    j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)
+    j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)  # old
+    j = j.replace("this.urlContainer.expires", "Date.now()")  # newer
+    # j = j.replace("this.onStale","this.onStal") #even newer
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace('"/api/mp/', '`${window.location.pathname}`+"api/mp/')
         j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
 
-    j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.RequestPriority.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
+    j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.ru.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace("https://static.matterport.com", "")
     with open(getModifiedName(showcaseJs), "w", encoding="UTF-8") as f:
