@@ -13,7 +13,7 @@ body:
 
 - type: input
   attributes:
-    label: One or more sample matterport IDs / urls that reproduce the issue:
+    label: One or more sample matterport IDs / urls that reproduce the issue
     placeholder: "AAee22A"
     description: |
       IE: https://my.matterport.com/show/?m=3EjZgu2vnFc  or 3EjZgu2vnFc, 39awerJ291
@@ -23,7 +23,7 @@ body:
     
 - type: input
   attributes:
-    label: Python version:
+    label: Python version
     placeholder: "1.2.3"
     description: |
       Please run `python --version` 
@@ -32,14 +32,14 @@ body:
 
 - type: textarea
   attributes:
-    label: Steps to reproduce:
+    label: Steps to reproduce
     placeholder: Tell us the steps required to trigger your bug.
   validations:
     required: true
 
 - type: textarea
   attributes:
-    label: What went wrong:
+    label: What went wrong
     placeholder: What happened instead?
   validations:
     required: true
@@ -47,7 +47,7 @@ body:
 
 - type: textarea
   attributes:
-    label: Workarounds:
+    label: Workarounds
     description: If you already tried certain things or found a temporary/partial solution please let us know.  Try using things like `--brute-js` CLI to download JS files we may not expect/find or `--no-advanced-download` to see if you can get even a partial download.
     placeholder: I tried X,Y,Z and had success with Y but Z caused applesauce.
   validations:
