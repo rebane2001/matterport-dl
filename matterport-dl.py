@@ -221,6 +221,9 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
             raise err
 
 
+async def validUntilFix(text):
+    return re.sub(r"validUntil\"\s*:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', text)
+
 async def downloadGraphModels(pageid):
     global GRAPH_DATA_REQ
     makeDirs("api/mp/models")
@@ -233,8 +236,8 @@ async def downloadGraphModels(pageid):
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
             text = text.replace("https://cdn-2.matterport.com", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
-
-        text = re.sub(r"validUntil\"\s:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', text)
+        text = validUntilFix(text)
+        
         async with aiofiles.open(getModifiedName(file_path), "w", encoding="UTF-8") as f:
             await f.write(text)
 
@@ -506,7 +509,7 @@ def patchShowcase():
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)  # old
     j = j.replace("this.urlContainer.expires", "Date.now()")  # newer
-    # j = j.replace("this.onStale","this.onStal") #even newer
+    j = j.replace("this.onStale","this.onStal") #even newer
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace('"/api/mp/', '`${window.location.pathname}`+"api/mp/')
         j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
@@ -569,7 +572,6 @@ def RemoteDomainsReplace(str: str):
         for dom in domReplace:
             str = str.replace(f"https://{dom}", "http://127.0.0.1:8080")
 
-    str = re.sub(r"validUntil\":\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', str)
     return str
 
 
@@ -646,6 +648,7 @@ async def downloadCapture(pageid):
         content = re.sub(r"(?P<preDomain>src\s*=\s*[" '"])https?://[^/' '"]+/', r"\g<preDomain>", content, flags=re.IGNORECASE)
         proxyAdd = "<script blocking='render' src='JSNetProxy.js'></script>"
 
+    content = validUntilFix(content)
     content = content.replace("<head>", f"<head><script>{injectedjs}</script>{proxyAdd}")
     with open(getModifiedName("index.html"), "w", encoding="UTF-8") as f:
         f.write(content)
@@ -744,6 +747,9 @@ async def AdvancedAssetDownload(base_page_text: str):
             tilesetBaseFile = urlparse(tilesetUrl).path[1:]
             try:
                 tileSetText = await downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile)
+                # tileSetText = validUntilFix(tileSetText)
+                # with open(getModifiedName(tilesetBaseFile), "w", encoding="UTF-8") as f:
+                    # f.write(tileSetText)
 
                 uris = re.findall(r'"uri":"(.+?)"', tileSetText)  # a bit brutish to extract rather than just walking the json
 
