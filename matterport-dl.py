@@ -996,10 +996,10 @@ def openDirReadGraphReqs(path, pageId):
 
 def SetupSession(use_proxy):
     global OUR_SESSION, MAX_CONCURRENT_REQUESTS
-    OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS, proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
+    OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS,verify=CLA.getCommandLineArg(CommandLineArg.VERIFY_SSL), proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD","MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "HELP", "ADV_HELP"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD","MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "HELP", "ADV_HELP"])
 
 
 @dataclass
@@ -1111,6 +1111,7 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG, "showing all log messages in the console rather than just the log file, very spammy", False, allow_saved=False)
 
     CLA.addCommandLineArg(CommandLineArg.DOWNLOAD, "Download items (without this it just does post download actions)", True, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.VERIFY_SSL, "SSL Verification", True, allow_saved=False, hidden=True)
     CLA.addCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD, "Primary asset downloads (normally biggest part of the download)", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
