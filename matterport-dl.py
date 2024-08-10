@@ -126,7 +126,7 @@ async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, 
     if "/" in file:
         makeDirs(os.path.dirname(file))
 
-    if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
+    if not CLA.getCommandLineArg(CommandLineArg.DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
         logUrlDownloadSkipped(type, file, url, descriptor)
         return
 
@@ -189,7 +189,7 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
         if "?" in file:
             file = file.split("?")[0]
 
-        if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+        if not CLA.getCommandLineArg(CommandLineArg.DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
             logUrlDownloadSkipped(type, file, url, "")
             return
         reqId = logUrlDownloadStart(type, file, url, "", shouldExist)
@@ -312,7 +312,7 @@ def logUrlDownloadStart(type, localTarget, url, additionalParams, shouldExist):
 
 def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParams, shouldExist, requestID, optionalResult=None):
     global CLA
-    if CLA.getCommandLineArg(CommandLineArg.NO_DOWNLOAD):
+    if not CLA.getCommandLineArg(CommandLineArg.DOWNLOAD):
         return
     if optionalResult:
         optionalResult = f"Result: {optionalResult}"
@@ -666,8 +666,9 @@ async def downloadCapture(pageid):
     await downloadPlugins(pageid)
     mainMsgLog("Downloading images...")
     await downloadPics(pageid)
-    mainMsgLog("Downloading primary model assets...")
-    await downloadMainAssets(pageid, accessurl)
+    if CLA.getCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD):
+        mainMsgLog("Downloading primary model assets...")
+        await downloadMainAssets(pageid, accessurl)
     os.chdir(page_root_dir)
     open("api/v1/event", "a").close()
     mainMsgLog(f"Done, {PROGRESS}!")
@@ -998,7 +999,7 @@ def SetupSession(use_proxy):
     OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS, proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "NO_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "HELP"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD","MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "HELP", "ADV_HELP"])
 
 
 @dataclass
@@ -1067,7 +1068,9 @@ class CLA:
         ret = ""
         for arg in CLA.all_args:
             noprefix = ""
-            if arg.hidden:
+            if arg.hidden and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
+                continue
+            if CLA.getCommandLineArg(CommandLineArg.ADV_HELP) and not arg.hidden:
                 continue
             if forServerNotDownload and not arg.applies_to_serving:
                 continue
@@ -1107,11 +1110,13 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.DEBUG, "debug mode enables select debug output to console or the debug/ folder mostly for developers", False, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG, "showing all log messages in the console rather than just the log file, very spammy", False, allow_saved=False)
 
-    CLA.addCommandLineArg(CommandLineArg.NO_DOWNLOAD, "Do not download anything (just do post download actions)", False, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.DOWNLOAD, "Download items (without this it just does post download actions)", True, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD, "Primary asset downloads (normally biggest part of the download)", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
 
     CLA.addCommandLineArg(CommandLineArg.HELP, "", False, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.ADV_HELP, "Show advanced command line options normally hidden, not recommended for most users", False, hidden=False, allow_saved=False)
     CLA.parseArgs()
 
     SetupSession(CLA.getCommandLineArg(CommandLineArg.PROXY))
@@ -1135,10 +1140,10 @@ if __name__ == "__main__":
         except:
             pass
     openDirReadGraphReqs(os.path.join(BASE_MATTERPORTDL_DIR, "graph_posts"), pageId)
-    if len(sys.argv) == 2 and not CLA.getCommandLineArg(CommandLineArg.HELP):
+    if len(sys.argv) == 2 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
         asyncio.run(initiateDownload(pageId))
 
-    elif len(sys.argv) == 4 and not CLA.getCommandLineArg(CommandLineArg.HELP):
+    elif len(sys.argv) == 4 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
         os.chdir(getPageId(pageId))
         try:
             logging.basicConfig(filename="server.log", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
