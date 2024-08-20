@@ -728,7 +728,7 @@ async def AdvancedAssetDownload(base_page_text: str):
 
         toDownload: list[AsyncDownloadItem] = []
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
-            mainMsgLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tilesets: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
+            mainMsgLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tileset indexes: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
         for mesh in base_node["assets"]["meshes"]:
             toDownload.append(AsyncDownloadItem("ADV_MODEL_MESH", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:]))  # not expecting the non 50k one to work but mgiht as well try
@@ -755,7 +755,8 @@ async def AdvancedAssetDownload(base_page_text: str):
                 tilesetUrlTemplate = tilesetUrlTemplate.replace("?", "<file>?")
             tilesetBaseFile = urlparse(tilesetUrl).path[1:]
             try:
-                tileSetText = await downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile)
+                tileSetBytes = await downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile, isBinary=True)
+                tileSetText = tileSetBytes.decode("utf-8", "ignore")
                 # tileSetText = validUntilFix(tileSetText)
                 # with open(getModifiedName(tilesetBaseFile), "w", encoding="UTF-8") as f:
                 # f.write(tileSetText)
@@ -767,9 +768,8 @@ async def AdvancedAssetDownload(base_page_text: str):
                 for uri in tqdm(uris):
                     url = tilesetUrlTemplate.replace("<file>", uri)
                     try:
-                        # chunkText = downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], None, True)
-                        await downloadFile("ADV_TILESET_GLB", False, url, urlparse(url).path[1:])
-                        chunkText = (await OUR_SESSION.get(url)).text  # not sure how to do this from file open yet....
+                        chunkBytes = await downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], isBinary=True)
+                        chunkText = chunkBytes.decode("utf-8", "ignore")
                         chunks = re.findall(r"(lod[0-9]_[a-zA-Z0-9-_]+\.(jpg|ktx2))", chunkText)
                         # print("Found chunks: ",chunks)
                         chunks.sort()
