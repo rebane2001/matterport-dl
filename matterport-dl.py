@@ -850,6 +850,11 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             logging.warning(f"404 error: {self.path} may not be downloading everything right")
         SimpleHTTPRequestHandler.send_error(self, code, message, explain)
 
+    def log_request(self, code='-', size='-'):
+        if CLA.getCommandLineArg(CommandLineArg.QUIET) and code == 200:
+            return
+        SimpleHTTPRequestHandler.log_request(self,code,size)
+
     def end_headers(self):
         self.send_my_headers()
         SimpleHTTPRequestHandler.end_headers(self)
@@ -999,7 +1004,39 @@ def SetupSession(use_proxy):
     OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS,verify=CLA.getCommandLineArg(CommandLineArg.VERIFY_SSL), proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD","MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "HELP", "ADV_HELP"])
+def RegisterWindowsBrowsers():
+    """Read the installed browsers from the Windows registry."""
+    # https://github.com/python/cpython/issues/52479
+    import winreg
+
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Clients\StartMenuInternet") as hkey:
+        i = 0
+        while True:
+            try:
+                subkey = winreg.EnumKey(hkey, i)
+                i += 1
+            except OSError as e:
+                if e.winerror != 259:  # ERROR_NO_MORE_ITEMS
+                    raise
+                break
+            try:
+                name = winreg.QueryValue(hkey, subkey)
+                if not name or not isinstance(name, str):
+                    name = subkey
+            except OSError:
+                name = subkey
+            try:
+                cmd = winreg.QueryValue(hkey, rf"{subkey}\shell\open\command")
+                cmd = cmd.strip('"')
+                os.stat(cmd)
+            except (OSError, AttributeError, TypeError, ValueError):
+                cmd = ""
+            name = name.replace("Google ", "").replace("Mozilla ", "").replace("Microsoft ", "")  # emulate stock names
+            webbrowser.register(name, None, webbrowser.GenericBrowser(cmd))
+
+
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS","QUIET", "HELP", "ADV_HELP", "AUTO_SERVE"])
+ArgAppliesTo = Enum("ArgAppliesTo", ["DOWNLOAD", "SERVING", "BOTH"])
 
 
 @dataclass
@@ -1012,15 +1049,15 @@ class CLA:
     currentValue: Any
     hidden: bool
     allow_saving: bool
-    applies_to_serving: bool
+    applies_to: ArgAppliesTo
     all_args: ClassVar[list[CLA]] = []
     orig_args: ClassVar[list[str]] = []  # we store them so we can reparse them after a config load
     value_cache: ClassVar[dict[CommandLineArg, Any]] = {}  # faster lookup
 
     @staticmethod
-    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True, applies_to_serving=False):
+    def addCommandLineArg(arg: CommandLineArg, description: str, defaultValue: Any, itemValueHelpDisplay: str = "", hidden=False, allow_saved=True, applies_to=ArgAppliesTo.DOWNLOAD):
         """itemValueHelpDisplay is the name to show in help for after the --arg   ie for --proxy '127.0.0.1:8080'"""
-        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved, applies_to_serving=applies_to_serving)
+        cla = CLA(arg=arg, currentValue=defaultValue, defaultValue=defaultValue, description=description, hasValue=itemValueHelpDisplay != "", itemValueHelpDisplay=itemValueHelpDisplay, hidden=hidden, allow_saving=allow_saved, applies_to=applies_to)
         if len(CLA.orig_args) == 0:
             CLA.orig_args = sys.argv.copy()
         for i in range(len(sys.argv) - 1, -1, -1):
@@ -1072,7 +1109,10 @@ class CLA:
                 continue
             if CLA.getCommandLineArg(CommandLineArg.ADV_HELP) and not arg.hidden:
                 continue
-            if forServerNotDownload and not arg.applies_to_serving:
+            if forServerNotDownload:
+                if arg.applies_to == ArgAppliesTo.DOWNLOAD:
+                    continue
+            elif arg.applies_to == ArgAppliesTo.SERVING:
                 continue
 
             desc = arg.description
@@ -1080,7 +1120,7 @@ class CLA:
             if arg.currentValue:
                 if not arg.hasValue:
                     noprefix = "no-"
-                    desc = f"disables {desc}"
+                    desc = f"disables: {desc}"
                 else:
                     desc = f"{desc} currently: {arg.currentValue}"
 
@@ -1116,16 +1156,31 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
 
+    CLA.addCommandLineArg(CommandLineArg.QUIET, "Only show failure log message items when serving", False, applies_to=ArgAppliesTo.SERVING)
+    CLA.addCommandLineArg(CommandLineArg.AUTO_SERVE, "Used to automatically start the server hosting a specific file, see README for details", "", "page_id_or_alias|host|port|what-browser", applies_to=ArgAppliesTo.SERVING, hidden=True)
+
     CLA.addCommandLineArg(CommandLineArg.HELP, "", False, hidden=True, allow_saved=False)
-    CLA.addCommandLineArg(CommandLineArg.ADV_HELP, "Show advanced command line options normally hidden, not recommended for most users", False, hidden=False, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.ADV_HELP, "Show advanced command line options normally hidden, not recommended for most users", False, hidden=False, allow_saved=False, applies_to=ArgAppliesTo.BOTH)
     CLA.parseArgs()
+    baseDir = CLA.getCommandLineArg(CommandLineArg.BASE_FOLDER)
+    browserLaunch = ""
+    defaults_full_path = os.path.join(BASE_MATTERPORTDL_DIR, DEFAULTS_JSON_FILE)
+    if os.path.exists(defaults_full_path):
+        CLA.LoadFromFile(defaults_full_path)
+        autoServe = CLA.getCommandLineArg(CommandLineArg.AUTO_SERVE)
+        if autoServe:
+            arr = autoServe.split("|")
+            if len(arr) > 2:
+                if len(arr) == 4:
+                    browserLaunch = arr.pop()
+                arr.insert(0, "matterport-dl.py")
+                sys.argv = arr
 
     SetupSession(CLA.getCommandLineArg(CommandLineArg.PROXY))
     pageId = ""
     if len(sys.argv) > 1:
         pageId = getPageId(sys.argv[1])
 
-    baseDir = CLA.getCommandLineArg(CommandLineArg.BASE_FOLDER)
     isServerRun = len(sys.argv) == 4
     if not os.path.exists(os.path.join(baseDir, pageId)) and os.path.exists(pageId) and isServerRun:  # allow old rooted pages to still be served
         baseDir = "./"
@@ -1151,8 +1206,15 @@ if __name__ == "__main__":
         except ValueError:
             logging.basicConfig(filename="server.log", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         logging.info("Server started up")
-        print("View in browser: http://" + sys.argv[2] + ":" + sys.argv[3])
+        url = "http://" + sys.argv[2] + ":" + sys.argv[3]
+        print("View in browser: " + url)
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
+        if browserLaunch:
+            print(f"Going to try and launch browser type: {browserLaunch}")
+            import webbrowser
+            if sys.platform == "win32":
+                RegisterWindowsBrowsers()
+            webbrowser.get(browserLaunch).open_new_tab(url)
         httpd.serve_forever()
     else:
         print("Usage:\n\tFirst download the digital twin: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
