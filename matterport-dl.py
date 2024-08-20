@@ -237,7 +237,7 @@ async def downloadGraphModels(pageid):
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
             text = text.replace("https://cdn-2.matterport.com", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
         text = validUntilFix(text)
-        
+
         async with aiofiles.open(getModifiedName(file_path), "w", encoding="UTF-8") as f:
             await f.write(text)
 
@@ -509,7 +509,7 @@ def patchShowcase():
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)  # old
     j = j.replace("this.urlContainer.expires", "Date.now()")  # newer
-    j = j.replace("this.onStale","this.onStal") #even newer
+    j = j.replace("this.onStale", "this.onStal")  # even newer
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace('"/api/mp/', '`${window.location.pathname}`+"api/mp/')
         j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
@@ -619,7 +619,7 @@ async def downloadCapture(pageid):
     basisTranscoderWasm = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.wasm")
     basisTranscoderJs = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.js")
     webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs]
-    match = re.search(r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode('utf-8', errors='ignore').decode('unicode-escape')) # some non-english matterport pages have unicode escapes for even the generic url chars
+    match = re.search(r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
 
     if match:
         accessurl = f"{match.group(1)}~/{{filename}}{match.group(3)}"
@@ -705,7 +705,7 @@ async def AdvancedAssetDownload(base_page_text: str):
         match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
         preload_json_str = ""
         if not match:
-            match = re.search(r"window.MP_PREFETCHED_MODELDATA = parseJSON\((\"\{.+?\}\}\}\")\);", base_page_text) # this happens for extra unicode encoded pages
+            match = re.search(r"window.MP_PREFETCHED_MODELDATA = parseJSON\((\"\{.+?\}\}\}\")\);", base_page_text)  # this happens for extra unicode encoded pages
             preload_json_str = json.loads(match.group(1))
         else:
             preload_json_str = match.group(1)
@@ -758,7 +758,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                 tileSetText = await downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile)
                 # tileSetText = validUntilFix(tileSetText)
                 # with open(getModifiedName(tilesetBaseFile), "w", encoding="UTF-8") as f:
-                    # f.write(tileSetText)
+                # f.write(tileSetText)
 
                 uris = re.findall(r'"uri":"(.+?)"', tileSetText)  # a bit brutish to extract rather than just walking the json
 
@@ -1001,7 +1001,7 @@ def openDirReadGraphReqs(path, pageId):
 
 def SetupSession(use_proxy):
     global OUR_SESSION, MAX_CONCURRENT_REQUESTS
-    OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS,verify=CLA.getCommandLineArg(CommandLineArg.VERIFY_SSL), proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
+    OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS, verify=CLA.getCommandLineArg(CommandLineArg.VERIFY_SSL), proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
 
 
 def RegisterWindowsBrowsers():
@@ -1140,8 +1140,9 @@ class CLA:
         return cla.currentValue
 
 
+DEFAULTS_JSON_FILE = "defaults.json"
 if __name__ == "__main__":
-    CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to_serving=True)
+    CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to=ArgAppliesTo.BOTH)
     CLA.addCommandLineArg(CommandLineArg.BRUTE_JS, "downloading the range of matterports many JS files numbered 1->999.js, through trying them all rather than just the ones we know", False)
     CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run", sys.platform == "win32")
@@ -1151,7 +1152,7 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG, "showing all log messages in the console rather than just the log file, very spammy", False, allow_saved=False)
 
     CLA.addCommandLineArg(CommandLineArg.DOWNLOAD, "Download items (without this it just does post download actions)", True, hidden=True, allow_saved=False)
-    CLA.addCommandLineArg(CommandLineArg.VERIFY_SSL, "SSL Verification", True, allow_saved=False, hidden=True)
+    CLA.addCommandLineArg(CommandLineArg.VERIFY_SSL, "SSL verification, mostly useful for proxy situations", True, allow_saved=False, hidden=True)
     CLA.addCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD, "Primary asset downloads (normally biggest part of the download)", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
