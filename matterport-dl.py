@@ -993,6 +993,9 @@ RUN_ARGS_CONFIG_NAME = "run_args.json"
 def openDirReadGraphReqs(path, pageId):
     for root, dirs, filenames in os.walk(path):
         for file in filenames:
+            lfile = file.lower()
+            if not lfile.startswith("get") or not lfile.endswith(".json"): #fixes evil osx files
+                continue
             with open(os.path.join(root, file), "r", encoding="UTF-8") as f:
                 if "modified" in file:
                     continue
