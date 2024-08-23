@@ -1166,11 +1166,11 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.HELP, "", False, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.ADV_HELP, "Show advanced command line options normally hidden, not recommended for most users", False, hidden=False, allow_saved=False, applies_to=ArgAppliesTo.BOTH)
     CLA.parseArgs()
-    baseDir = CLA.getCommandLineArg(CommandLineArg.BASE_FOLDER)
     browserLaunch = ""
     defaults_full_path = os.path.join(BASE_MATTERPORTDL_DIR, DEFAULTS_JSON_FILE)
     if os.path.exists(defaults_full_path):
         CLA.LoadFromFile(defaults_full_path)
+        CLA.parseArgs()
         autoServe = CLA.getCommandLineArg(CommandLineArg.AUTO_SERVE)
         if autoServe:
             arr = autoServe.split("|")
@@ -1179,6 +1179,8 @@ if __name__ == "__main__":
                     browserLaunch = arr.pop()
                 arr.insert(0, "matterport-dl.py")
                 sys.argv = arr
+
+    baseDir = CLA.getCommandLineArg(CommandLineArg.BASE_FOLDER)
 
     SetupSession(CLA.getCommandLineArg(CommandLineArg.PROXY))
     pageId = ""
