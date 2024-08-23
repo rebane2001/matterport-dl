@@ -1206,12 +1206,18 @@ if __name__ == "__main__":
         asyncio.run(initiateDownload(pageId))
 
     elif len(sys.argv) == 4 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
-        os.chdir(getPageId(pageId))
         try:
             logging.basicConfig(filename="server.log", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         except ValueError:
             logging.basicConfig(filename="server.log", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-        logging.info("Server started up")
+
+        twinDir = getPageId(pageId)
+        if not os.path.exists(twinDir):
+            fullPath = os.path.abspath(twinDir)
+            raise Exception(f"Unable to change to download directory for twin of: {fullPath} make sure the download is complete and there")
+        else:
+            os.chdir(twinDir)
+        logging.info("Server starting up")
         url = "http://" + sys.argv[2] + ":" + sys.argv[3]
         print("View in browser: " + url)
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
