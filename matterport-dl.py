@@ -1214,7 +1214,11 @@ if __name__ == "__main__":
         twinDir = getPageId(pageId)
         if not os.path.exists(twinDir):
             fullPath = os.path.abspath(twinDir)
-            raise Exception(f"Unable to change to download directory for twin of: {fullPath} make sure the download is complete and there")
+            relativeToScriptDir = os.path.join(BASE_MATTERPORTDL_DIR,baseDir,twinDir)
+            if os.path.exists(relativeToScriptDir):
+                os.chdir(relativeToScriptDir)
+            else:
+                raise Exception(f"Unable to change to download directory for twin of: {fullPath} make sure the download is complete and there")
         else:
             os.chdir(twinDir)
         logging.info("Server starting up")
