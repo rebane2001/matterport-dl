@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 import pathlib
 import re
 import os
+import platform
+
 import shutil
 import sys
 from typing import Any, Self, TypeVar, ClassVar, cast
@@ -47,6 +49,54 @@ accesskeys = []
 dirsMadeCache: dict[str, bool] = {}
 
 
+# modified from https://gist.github.com/pkienzle/5e13ec07077d32985fa48ebe43486832
+def git_rev():
+    """
+    Get the git revision for the repo in the path *repo*.
+    Returns the commit id of the current head.
+    Note: this function parses the files in the git repository directory
+    without using the git application.  It may break if the structure of
+    the git repository changes.  It only reads files, so it should not do
+    any damage to the repository in the process.
+    """
+    # Based on stackoverflow am9417
+    # https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script/59950703#59950703
+    git_root = BASE_MATTERPORTDL_DIR / ".git"
+    git_head = git_root / "HEAD"
+    if not git_head.exists():
+        return None
+
+    # Read .git/HEAD file
+    with git_head.open("r") as fd:
+        head_ref = fd.read()
+
+    # Find head file .git/HEAD (e.g. ref: ref/heads/master => .git/ref/heads/master)
+    if not head_ref.startswith("ref: "):
+        return head_ref
+    head_ref = head_ref[5:].strip()
+
+    # Read commit id from head file
+    head_path = git_root.joinpath(*head_ref.split("/"))
+    if not head_path.exists():
+        return None
+
+    with head_path.open("r") as fd:
+        commit = fd.read().strip()
+
+    return f"{head_ref} ({commit})"
+
+def sys_info():
+    str = "Running python "
+    try:
+        str += platform.python_version()
+        str += " on " + sys.platform
+        str += " with matterport-dl version: " + git_rev()
+    except Exception:
+        pass
+    return str
+    
+
+
 def makeDirs(dirname):
     global dirsMadeCache
     if dirname in dirsMadeCache:
@@ -55,10 +105,13 @@ def makeDirs(dirname):
     dirsMadeCache[dirname] = True
 
 
-def mainMsgLog(msg: str):
-    logging.info(msg)
-    if not CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
+def consoleDebugLog(msg: str, loglevel=logging.INFO, forceDebugOn=False):
+    logging.log(loglevel,msg)
+    if not CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG) and (forceDebugOn or CLA.getCommandLineArg(CommandLineArg.DEBUG) ):
         print(msg)
+
+def consoleLog(msg: str, loglevel=logging.INFO):
+    consoleDebugLog(msg,loglevel,True)
 
 
 def getModifiedName(filename: str):
@@ -251,8 +304,17 @@ ProgressType = Enum("ProgressType", ["Request", "Success", "Skipped", "Failed404
 
 class ProgressStats:
     def __str__(self):
-        return f"Total fetches: {self.TotalPosRequests()} {self.ValStr(ProgressType.Skipped)} actual {self.ValStr(ProgressType.Request)} {self.ValStr(ProgressType.Success)} {self.ValStr(ProgressType.Failed403)} {self.ValStr(ProgressType.Failed404)} {self.ValStr(ProgressType.FailedUnknown)}"
+        relInfo = ""
+        if self.relativeTo is not None:
+            relInfo = "Relative "
+        return f"{relInfo}Total fetches: {self.TotalPosRequests()} {self.ValStr(ProgressType.Skipped)} actual {self.ValStr(ProgressType.Request)} {self.ValStr(ProgressType.Success)} {self.ValStr(ProgressType.Failed403)} {self.ValStr(ProgressType.Failed404)} {self.ValStr(ProgressType.FailedUnknown)}"
 
+    def RelativeMark(self):
+        self.relativeTo = dict(self.stats)
+    def ClearRelative(self):
+        self.relativeTo = None
+
+    relativeTo: dict[ProgressType, int] | None
     def __init__(self):
         self.stats: dict[ProgressType, int] = dict()
         # self.locks : dict[ProgressType,asyncio.Semaphore] = dict()
@@ -262,7 +324,10 @@ class ProgressStats:
             self.locks[typ] = threading.Lock()
 
     def Val(self, typ: ProgressType):
-        return self.stats[typ]
+        val = self.stats[typ]
+        if self.relativeTo is not None:
+            val -= self.relativeTo[typ]
+        return val
 
     def TotalPosRequests(self):
         return self.Val(ProgressType.Request) + self.Val(ProgressType.Skipped)
@@ -399,9 +464,8 @@ async def downloadAssets(base):
                 toDownload.append(AsyncDownloadItem("BRUTE_JS", False, f"{base}{file}", file))
                 assets.append(file)
         before = PROGRESS.Val(ProgressType.Success)
-        mainMsgLog("Brute force additional JS files...")
+        consoleLog("Brute force additional JS files...")
         await AsyncArrayDownload(toDownload)
-        mainMsgLog(f"Brute forcing found: {PROGRESS.Val(ProgressType.Success)-before} additional JS files")
 
 
 async def downloadWebglVendors(urls):
@@ -445,13 +509,15 @@ class ExceptionWhatExceptionTaskGroup(asyncio.TaskGroup):
 async def AsyncArrayDownload(assets: list[AsyncDownloadItem]):
     # with tqdm(total=(len(assets))) as pbar:
     async with ExceptionWhatExceptionTaskGroup() as tg:
+        PROGRESS.RelativeMark()
+        
         for asset in tqdm(assets):
             # pbar.update(1)
             tg.create_task(downloadFile(asset.type, asset.shouldExist, asset.url, asset.file))
             await asyncio.sleep(0.001)  # we need some sleep or we will not yield
             while MAX_TASKS_SEMAPHORE.locked():
                 await asyncio.sleep(0.01)
-
+        logging.debug(f"{PROGRESS}")
 
 async def downloadInfo(pageid):
     global BASE_MATTERPORT_DOMAIN
@@ -566,7 +632,7 @@ def GetOrReplaceKey(url, is_read_key):
 
 
 def DebugSaveFile(fileName, fileContent):
-    mainMsgLog(f"Saved debug file: {fileName}")
+    consoleLog(f"Saved debug file: {fileName}")
     with open(f"debug/{fileName}", "w") as the_file:
         the_file.write(fileContent)
 
@@ -603,16 +669,16 @@ async def downloadCapture(pageid):
         makeDirs("debug")
     if CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
         logging.getLogger().addHandler(logging.StreamHandler())
-    logging.debug("Started up a download run")
+    consoleLog(f"Started up a download run {sys_info()}")
     page_root_dir = os.path.abspath(".")
     url = f"https://my.{BASE_MATTERPORT_DOMAIN}/show/?m={pageid}"
-    mainMsgLog(f"Downloading capture of {pageid} with base page... {url}")
+    consoleLog(f"Downloading capture of {pageid} with base page... {url}")
     base_page_text = ""
     try:
         base_page_text : str = await downloadFileAndGetText("MAIN", True, url, "index.html", always_download=True)
         if f"{CHINA_MATTERPORT_DOMAIN}/showcase" in base_page_text:
             BASE_MATTERPORT_DOMAIN = CHINA_MATTERPORT_DOMAIN
-            mainMsgLog("Chinese matterport url found in main page, will try China server, note if this does not work try a proxy outside china")
+            consoleLog("Chinese matterport url found in main page, will try China server, note if this does not work try a proxy outside china")
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("base_page.html", base_page_text)  # noqa: E701
 
@@ -630,7 +696,7 @@ async def downloadCapture(pageid):
     basisTranscoderWasm = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.wasm")
     basisTranscoderJs = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.js")
     webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs]
-    match = re.search(r'"(https://cdn-\d*\.matterport(?:<vr)\.(?:com|cn)/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
+    match = re.search(r'"(https://cdn-\d*\.matterport(?:<vr)?\.(?:com|cn)/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
 #matterportvr.cn
     if match:
         accessurl = f"{match.group(1)}~/{{filename}}{match.group(3)}"
@@ -642,7 +708,7 @@ async def downloadCapture(pageid):
     file_type_content = await GetTextOnlyRequest("MAIN", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type=3")  # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
     GetOrReplaceKey(file_type_content, True)
 
-    mainMsgLog("Downloading graph model data...")  # need the details one for advanced download
+    consoleLog("Downloading graph model data...")  # need the details one for advanced download
     await downloadGraphModels(pageid)
 
     if CLA.getCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD):
@@ -665,29 +731,30 @@ async def downloadCapture(pageid):
     with open(getModifiedName("index.html"), "w", encoding="UTF-8") as f:
         f.write(content)
 
-    mainMsgLog("Downloading static files...")
+    consoleLog("Downloading static files...")
 
     await downloadAssets(staticbase)
     await downloadWebglVendors(webglVendors)
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
-    mainMsgLog("Downloading model info...")
+    consoleLog("Downloading model info...")
     await downloadInfo(pageid)
-    mainMsgLog("Downloading plugins...")
+    consoleLog("Downloading plugins...")
     await downloadPlugins(pageid)
-    mainMsgLog("Downloading images...")
+    consoleLog("Downloading images...")
     await downloadPics(pageid)
     if CLA.getCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD):
-        mainMsgLog("Downloading primary model assets...")
+        consoleLog("Downloading primary model assets...")
         await downloadMainAssets(pageid, accessurl)
     os.chdir(page_root_dir)
     open("api/v1/event", "a").close()
-    mainMsgLog(f"Done, {PROGRESS}!")
+    PROGRESS.ClearRelative()
+    consoleLog(f"Done, {PROGRESS}!")
 
 
 async def AdvancedAssetDownload(base_page_text: str):
     ADV_CROP_FETCH = [{"start": "width=512&crop=1024,1024,", "increment": "0.5"}, {"start": "crop=512,512,", "increment": "0.25"}]
-    mainMsgLog("Doing advanced download of dollhouse/floorplan data...")
+    consoleLog("Doing advanced download of dollhouse/floorplan data...")
     # Started to parse the modeldata further.  As it is error prone tried to try catch silently for failures. There is more data here we could use for example:
     # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].tileUrlTemplate
     # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
@@ -738,8 +805,7 @@ async def AdvancedAssetDownload(base_page_text: str):
             base_node["locations"] = base_cache_node["locations"]
 
         toDownload: list[AsyncDownloadItem] = []
-        if CLA.getCommandLineArg(CommandLineArg.DEBUG):
-            mainMsgLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tileset indexes: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
+        consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tileset indexes: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
         for mesh in base_node["assets"]["meshes"]:
             toDownload.append(AsyncDownloadItem("ADV_MODEL_MESH", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:]))  # not expecting the non 50k one to work but mgiht as well try
@@ -757,7 +823,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                 except:
                     pass
 
-        mainMsgLog("Going to download tileset 3d asset models")
+        consoleLog("Going to download tileset 3d asset models")
         # Download Tilesets
         for tileset in base_node["assets"]["tilesets"]:  # normally just one tileset
             tilesetUrl = tileset["url"]
@@ -835,7 +901,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                         break
             except Exception:
                 logging.exception("Adv download texture have exception")
-        mainMsgLog("Downloading textures and previews for tileset 3d models")
+        consoleLog("Downloading textures and previews for tileset 3d models")
         await AsyncArrayDownload(toDownload)
     except Exception:
         logging.exception("Adv download general had exception of")
@@ -847,8 +913,12 @@ async def AdvancedAssetDownload(base_page_text: str):
 
 
 async def initiateDownload(url):
-    async with OUR_SESSION:
-        await downloadCapture(getPageId(url))
+    try:
+        async with OUR_SESSION:
+            await downloadCapture(getPageId(url))
+    except Exception:
+        logging.exception("Unhandled fatal exception")
+        raise
 
 
 def getPageId(url):
@@ -1232,7 +1302,7 @@ if __name__ == "__main__":
                 raise Exception(f"Unable to change to download directory for twin of: {fullPath} or {os.path.abspath(relativeToScriptDir)} make sure the download is there")
         else:
             os.chdir(twinDir)
-        logging.info("Server starting up")
+        logging.info(f"Server starting up {sys_info()}")
         url = "http://" + sys.argv[2] + ":" + sys.argv[3]
         print("View in browser: " + url)
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
