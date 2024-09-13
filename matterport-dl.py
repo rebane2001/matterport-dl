@@ -612,7 +612,7 @@ async def downloadCapture(pageid):
         base_page_text : str = await downloadFileAndGetText("MAIN", True, url, "index.html", always_download=True)
         if f"{CHINA_MATTERPORT_DOMAIN}/showcase" in base_page_text:
             BASE_MATTERPORT_DOMAIN = CHINA_MATTERPORT_DOMAIN
-            logging.warning("Chinese matterport url found in main page, will try China server, note if this does not work try a proxy outside china")
+            mainMsgLog("Chinese matterport url found in main page, will try China server, note if this does not work try a proxy outside china")
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("base_page.html", base_page_text)  # noqa: E701
 
@@ -624,14 +624,14 @@ async def downloadCapture(pageid):
 
     staticbase = re.search(rf'<base href="(https://static.{BASE_MATTERPORT_DOMAIN}/.*?)">', base_page_text).group(1)  # type: ignore - may be None
 
-    threeMin = re.search(rf"https://static.{BASE_MATTERPORT_DOMAIN}/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js", base_page_text).group()  # type: ignore - may be None
+    threeMin = re.search(r"https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js", base_page_text).group()  # type: ignore - may be None , this is always.com
     dracoWasmWrapper = threeMin.replace("three.min.js", "libs/draco/gltf/draco_wasm_wrapper.js")
     dracoDecoderWasm = threeMin.replace("three.min.js", "libs/draco/gltf/draco_decoder.wasm")
     basisTranscoderWasm = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.wasm")
     basisTranscoderJs = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.js")
     webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs]
-    match = re.search(r'"(https://cdn-\d*\.matterport\.com/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
-
+    match = re.search(r'"(https://cdn-\d*\.matterport(?:<vr)\.(?:com|cn)/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
+#matterportvr.cn
     if match:
         accessurl = f"{match.group(1)}~/{{filename}}{match.group(3)}"
 
