@@ -37,6 +37,9 @@ BASE_MATTERPORTDL_DIR = pathlib.Path(__file__).resolve().parent
 MAX_CONCURRENT_REQUESTS = 20  # cffi will make sure no more than this many curl workers are used at once
 MAX_CONCURRENT_TASKS = 64  # while we could theoretically leave this unbound just relying on MAX_CONCURRENT_REQESTS there is little reason to spawn a million tasks at once
 
+BASE_MATTERPORT_DOMAIN = "matterport.com"
+CHINA_MATTERPORT_DOMAIN = "matterportvr.cn"
+
 # Matterport uses various access keys for a page, when the primary key doesnt work we try some other ones,  note a single model can have 1400+ unique access keys not sure which matter vs not
 accesskeys = []
 
@@ -225,17 +228,18 @@ def validUntilFix(text):
     return re.sub(r"validUntil\"\s*:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', text)
 
 async def downloadGraphModels(pageid):
-    global GRAPH_DATA_REQ
+    global GRAPH_DATA_REQ, BASE_MATTERPORT_DOMAIN
     makeDirs("api/mp/models")
 
     for key in GRAPH_DATA_REQ:
         file_path_base = f"api/mp/models/graph_{key}"
         file_path = f"{file_path_base}.json"
-        text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, "https://my.matterport.com/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key, CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
+        text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key, CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
 
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
-            text = text.replace("https://cdn-2.matterport.com", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
+            text = text.replace(f"https://cdn-2.{BASE_MATTERPORT_DOMAIN}", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
+            text = text.replace(f"https://cdn-1.{BASE_MATTERPORT_DOMAIN}", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
         text = validUntilFix(text)
 
         async with aiofiles.open(getModifiedName(file_path), "w", encoding="UTF-8") as f:
@@ -323,7 +327,7 @@ def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParam
 
 
 async def downloadAssets(base):
-    global PROGRESS
+    global PROGRESS, BASE_MATTERPORT_DOMAIN
 
     # not really used any more unless we run into bad results
     numeric_js_files = [30, 39, 46, 47, 58, 62, 66, 76, 79, 134, 136, 143, 164, 207, 250, 251, 260, 300, 309, 316, 321, 330, 356, 371, 376, 383, 385, 386, 393, 399, 422, 423, 438, 464, 519, 521, 524, 525, 539, 564, 580, 584, 606, 614, 633, 666, 670, 674, 718, 721, 726, 755, 764, 769, 794, 828, 833, 838, 856, 926, 932, 933, 934, 947, 976, 995]
@@ -339,7 +343,7 @@ async def downloadAssets(base):
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
     file = "js/showcase.js"
     typeDict = {file: "STATIC_JS"}
-    await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404
+    await downloadFile("STATIC_ASSET", True, f"https://{BASE_MATTERPORT_DOMAIN}/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404
     showcase_cont = await downloadFileAndGetText(typeDict[file], True, base + file, file, always_download=True)
 
     # lets try to extract the js files it might be loading and make sure we know them
@@ -450,30 +454,32 @@ async def AsyncArrayDownload(assets: list[AsyncDownloadItem]):
 
 
 async def downloadInfo(pageid):
+    global BASE_MATTERPORT_DOMAIN
     assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v1/player/models/{pageid}/", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files", f"api/v1/jsonstore/model/trims/{pageid}", "api/v1/plugins?manifest=true", f"api/v1/jsonstore/model/plugins/{pageid}"]
     toDownload: list[AsyncDownloadItem] = []
     for asset in assets:
         local_file = asset
         if local_file.endswith("/"):
             local_file = local_file + "index.html"
-        toDownload.append(AsyncDownloadItem("MODEL_INFO", True, f"https://my.matterport.com/{asset}", local_file))
+        toDownload.append(AsyncDownloadItem("MODEL_INFO", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/{asset}", local_file))
     await AsyncArrayDownload(toDownload)
 
     makeDirs("api/mp/models")
     with open("api/mp/models/graph", "w", encoding="UTF-8") as f:
         f.write('{"data": "empty"}')
     for i in range(1, 4):  # file to url mapping
-        await downloadFile("FILE_TO_URL_JSON", True, f"https://my.matterport.com/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
+        await downloadFile("FILE_TO_URL_JSON", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
     setAccessURLs(pageid)
 
 
 async def downloadPlugins(pageid):
+    global BASE_MATTERPORT_DOMAIN
     pluginJson: Any
     with open("api/v1/plugins", "r", encoding="UTF-8") as f:
         pluginJson = json.loads(f.read())
     for plugin in pluginJson:
         plugPath = f"showcase-sdk/plugins/published/{plugin["name"]}/{plugin["currentVersion"]}/plugin.json"
-        await downloadFile("PLUGIN", True, f"https://static.matterport.com/{plugPath}", plugPath)
+        await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
 
 
 async def downloadPics(pageid):
@@ -504,6 +510,7 @@ async def downloadMainAssets(pageid, accessurl):
 
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
+    global BASE_MATTERPORT_DOMAIN
     showcaseJs = "js/showcase.js"
     with open(showcaseJs, "r", encoding="UTF-8") as f:
         j = f.read()
@@ -514,9 +521,9 @@ def patchShowcase():
         j = j.replace('"/api/mp/', '`${window.location.pathname}`+"api/mp/')
         j = j.replace("${this.baseUrl}", "${window.location.origin}${window.location.pathname}")
 
-    j = j.replace('e.get("https://static.matterport.com/geoip/",{responseType:"json",priority:n.ru.LOW})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
+    j = j.replace(f'e.get("https://static.{BASE_MATTERPORT_DOMAIN}/geoip/",{{responseType:"json",priority:n.ru.LOW}})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
-        j = j.replace("https://static.matterport.com", "")
+        j = j.replace(f"https://static.{BASE_MATTERPORT_DOMAIN}", "")
     with open(getModifiedName(showcaseJs), "w", encoding="UTF-8") as f:
         f.write(j)
 
@@ -565,7 +572,8 @@ def DebugSaveFile(fileName, fileContent):
 
 
 def RemoteDomainsReplace(str: str):
-    domReplace = ["static.matterport.com", "cdn-2.matterport.com", "cdn-1.matterport.com", "mp-app-prod.global.ssl.fastly.net", "events.matterport.com"]
+    global BASE_MATTERPORT_DOMAIN
+    domReplace = [f"static.{BASE_MATTERPORT_DOMAIN}", f"cdn-2.{BASE_MATTERPORT_DOMAIN}", f"cdn-1.{BASE_MATTERPORT_DOMAIN}", "mp-app-prod.global.ssl.fastly.net", f"events.{BASE_MATTERPORT_DOMAIN}"]
 
     # str = str.replace('"https://static.matterport.com','`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-2.matterport.com','`${window.location.origin}${window.location.pathname}` + "').replace('"https://cdn-1.matterport.com','`${window.location.origin}${window.location.pathname}` + "').replace('"https://mp-app-prod.global.ssl.fastly.net/','`${window.location.origin}${window.location.pathname}` + "').replace('"https://events.matterport.com/', '`${window.location.origin}${window.location.pathname}` + "')
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
@@ -576,7 +584,7 @@ def RemoteDomainsReplace(str: str):
 
 
 async def downloadCapture(pageid):
-    global KNOWN_ACCESS_KEY, PROGRESS, RUN_ARGS_CONFIG_NAME
+    global KNOWN_ACCESS_KEY, PROGRESS, RUN_ARGS_CONFIG_NAME, BASE_MATTERPORT_DOMAIN, CHINA_MATTERPORT_DOMAIN
     makeDirs(pageid)
     alias = CLA.getCommandLineArg(CommandLineArg.ALIAS)
     if alias and not os.path.exists(alias):
@@ -597,11 +605,14 @@ async def downloadCapture(pageid):
         logging.getLogger().addHandler(logging.StreamHandler())
     logging.debug("Started up a download run")
     page_root_dir = os.path.abspath(".")
-    url = f"https://my.matterport.com/show/?m={pageid}"
+    url = f"https://my.{BASE_MATTERPORT_DOMAIN}/show/?m={pageid}"
     mainMsgLog(f"Downloading capture of {pageid} with base page... {url}")
     base_page_text = ""
     try:
-        base_page_text = await downloadFileAndGetText("MAIN", True, url, "index.html", always_download=True)
+        base_page_text : str = await downloadFileAndGetText("MAIN", True, url, "index.html", always_download=True)
+        if f"{CHINA_MATTERPORT_DOMAIN}/showcase" in base_page_text:
+            BASE_MATTERPORT_DOMAIN = CHINA_MATTERPORT_DOMAIN
+            logging.warning("Chinese matterport url found in main page, will try China server, note if this does not work try a proxy outside china")
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("base_page.html", base_page_text)  # noqa: E701
 
@@ -611,9 +622,9 @@ async def downloadCapture(pageid):
         else:
             raise TypeError("First request error") from error
 
-    staticbase = re.search(r'<base href="(https://static.matterport.com/.*?)">', base_page_text).group(1)  # type: ignore - may be None
+    staticbase = re.search(rf'<base href="(https://static.{BASE_MATTERPORT_DOMAIN}/.*?)">', base_page_text).group(1)  # type: ignore - may be None
 
-    threeMin = re.search(r"https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js", base_page_text).group()  # type: ignore - may be None
+    threeMin = re.search(rf"https://static.{BASE_MATTERPORT_DOMAIN}/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js", base_page_text).group()  # type: ignore - may be None
     dracoWasmWrapper = threeMin.replace("three.min.js", "libs/draco/gltf/draco_wasm_wrapper.js")
     dracoDecoderWasm = threeMin.replace("three.min.js", "libs/draco/gltf/draco_decoder.wasm")
     basisTranscoderWasm = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.wasm")
@@ -628,7 +639,7 @@ async def downloadCapture(pageid):
         raise Exception(f"Can't find urls, try the main page: {url} in a browser to make sure it loads the model correctly")
 
     # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
-    file_type_content = await GetTextOnlyRequest("MAIN", True, f"https://my.matterport.com/api/player/models/{pageid}/files?type=3")  # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
+    file_type_content = await GetTextOnlyRequest("MAIN", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type=3")  # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
     GetOrReplaceKey(file_type_content, True)
 
     mainMsgLog("Downloading graph model data...")  # need the details one for advanced download
@@ -1003,8 +1014,8 @@ def openDirReadGraphReqs(path, pageId):
 
 
 def SetupSession(use_proxy):
-    global OUR_SESSION, MAX_CONCURRENT_REQUESTS
-    OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS, verify=CLA.getCommandLineArg(CommandLineArg.VERIFY_SSL), proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": "https://my.matterport.com/", "x-matterport-application-name": "showcase"})
+    global OUR_SESSION, MAX_CONCURRENT_REQUESTS, BASE_MATTERPORT_DOMAIN
+    OUR_SESSION = requests.AsyncSession(impersonate="chrome", max_clients=MAX_CONCURRENT_REQUESTS, verify=CLA.getCommandLineArg(CommandLineArg.VERIFY_SSL), proxies=({"http": use_proxy, "https": use_proxy} if use_proxy else None), headers={"Referer": f"https://my.{BASE_MATTERPORT_DOMAIN}/", "x-matterport-application-name": "showcase"})
 
 
 def RegisterWindowsBrowsers():
@@ -1218,7 +1229,7 @@ if __name__ == "__main__":
             if os.path.exists(relativeToScriptDir):
                 os.chdir(relativeToScriptDir)
             else:
-                raise Exception(f"Unable to change to download directory for twin of: {fullPath} make sure the download is complete and there")
+                raise Exception(f"Unable to change to download directory for twin of: {fullPath} or {os.path.abspath(relativeToScriptDir)} make sure the download is there")
         else:
             os.chdir(twinDir)
         logging.info("Server starting up")
