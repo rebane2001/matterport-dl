@@ -408,7 +408,7 @@ async def downloadAssets(base):
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
     file = "js/showcase.js"
     typeDict = {file: "STATIC_JS"}
-    await downloadFile("STATIC_ASSET", True, f"https://{BASE_MATTERPORT_DOMAIN}/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404
+    await downloadFile("STATIC_ASSET", True, f"https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[file], True, base + file, file, always_download=True)
 
     # lets try to extract the js files it might be loading and make sure we know them
@@ -696,7 +696,7 @@ async def downloadCapture(pageid):
     basisTranscoderWasm = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.wasm")
     basisTranscoderJs = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.js")
     webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs]
-    match = re.search(r'"(https://cdn-\d*\.matterport(?:<vr)?\.(?:com|cn)/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
+    match = re.search(r'"(https://cdn-\d*\.matterport(?:vr)?\.(?:com|cn)/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
 #matterportvr.cn
     if match:
         accessurl = f"{match.group(1)}~/{{filename}}{match.group(3)}"
