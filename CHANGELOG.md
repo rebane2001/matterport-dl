@@ -1,3 +1,6 @@
+## 2024-09-14
+- Downloading models from behind the great china firewall added through their matterportvr.cn server
+
 ## 2024-08-19
 - New auto-serve option to start server and optionally launch browser (with fix for Windows browsers)
 - Sample [Auto PY to EXE](https://github.com/brentvollebregt/auto-py-to-exe) config added for standalone executable generation

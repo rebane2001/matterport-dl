@@ -20,13 +20,23 @@ body:
       If this can only be reproduced with a private ID you can note that but it may be less likely to be resolved.      
   validations:
     required: true
-    
+
+- type: input
+  attributes:
+    label: Started up message
+    placeholder: "Started up a download run...."
+    description: |
+      If you are able to start matterport-dl.py it should say first thing a line like `Started up a download run Running python 3.2.4 on win32 with matterport-dl version: main (0fe3e39d81947e646ca3d4897c94c062020ae1af)`.
+      Please include that line here if you have it.
+  validations:
+    required: false
+
 - type: input
   attributes:
     label: Python version
     placeholder: "1.2.3"
     description: |
-      Please run `python --version` 
+      If you were unable to put the startup message above, please put the python version here.  If you did include the startup message you can ignore this.
   validations:
     required: false
 
