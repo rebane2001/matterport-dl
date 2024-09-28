@@ -189,13 +189,14 @@ async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, 
     reqId = logUrlDownloadStart(type, file, url, descriptor, shouldExist)
     try:
         resp: requests.Response = await OUR_SESSION.request(url=url, method="POST", headers={"Content-Type": "application/json"}, data=bytes(post_json_str, "utf-8"))
+        resp.raise_for_status()
         # req.add_header('Content-Length', len(body_bytes))
         async with aiofiles.open(file, "wb") as the_file:
             await the_file.write(resp.content)
         logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId)
     except Exception as ex:
         logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId, ex)
-        raise ex
+        raise Exception(f"Request error for url: {url} ({type}) that would output to: {file}") from ex
 
 
 async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
@@ -274,7 +275,7 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
                         logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId, err2, True)
                         pass
             logUrlDownloadFinish(type, file, url, "", shouldExist, reqId, err)
-            raise err
+            raise Exception(f"Request error for url: {url} ({type}) that would output to: {file}") from err
 
 
 def validUntilFix(text):

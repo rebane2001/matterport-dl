@@ -1,4 +1,4 @@
 requests
 tqdm
-curl_cffi
+curl-cffi==0.7.1
 aiofiles
