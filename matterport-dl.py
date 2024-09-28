@@ -47,7 +47,7 @@ accesskeys = []
 
 
 dirsMadeCache: dict[str, bool] = {}
-
+THIS_MODEL_ROOT_DIR : str
 
 # modified from https://gist.github.com/pkienzle/5e13ec07077d32985fa48ebe43486832
 def git_rev():
@@ -560,6 +560,7 @@ async def downloadPics(pageid):
 
 
 async def downloadMainAssets(pageid, accessurl):
+    global THIS_MODEL_ROOT_DIR
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     match = re.search(r"models/([a-z0-9-_./~]*)/\{filename\}", accessurl)
@@ -572,8 +573,8 @@ async def downloadMainAssets(pageid, accessurl):
     makeDirs(basePath)
     os.chdir(basePath)
     await downloadUUID(accessurl, modeldata["job"]["uuid"])
-    await downloadSweeps(accessurl, modeldata["sweeps"])
-
+    await downloadSweeps(accessurl, modeldata["sweeps"]) #sweeps are generally the biggest thing minus a few modles that have massive 3d detail items
+    os.chdir(THIS_MODEL_ROOT_DIR)
 
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
@@ -651,12 +652,13 @@ def RemoteDomainsReplace(str: str):
 
 
 async def downloadCapture(pageid):
-    global KNOWN_ACCESS_KEY, PROGRESS, RUN_ARGS_CONFIG_NAME, BASE_MATTERPORT_DOMAIN, CHINA_MATTERPORT_DOMAIN
+    global KNOWN_ACCESS_KEY, PROGRESS, RUN_ARGS_CONFIG_NAME, BASE_MATTERPORT_DOMAIN, CHINA_MATTERPORT_DOMAIN, THIS_MODEL_ROOT_DIR
     makeDirs(pageid)
     alias = CLA.getCommandLineArg(CommandLineArg.ALIAS)
     if alias and not os.path.exists(alias):
         os.symlink(pageid, alias)
-    os.chdir(pageid)
+    THIS_MODEL_ROOT_DIR = os.path.abspath(pageid)
+    os.chdir(THIS_MODEL_ROOT_DIR)
     ROOT_FILE_COPY = ["JSNetProxy.js", "matterport-dl.py"]
     for fl in ROOT_FILE_COPY:
         if not os.path.exists(fl):
@@ -671,7 +673,7 @@ async def downloadCapture(pageid):
     if CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
         logging.getLogger().addHandler(logging.StreamHandler())
     consoleLog(f"Started up a download run {sys_info()}")
-    page_root_dir = os.path.abspath(".")
+    
     url = f"https://my.{BASE_MATTERPORT_DOMAIN}/show/?m={pageid}"
     consoleLog(f"Downloading capture of {pageid} with base page... {url}")
     base_page_text = ""
@@ -744,11 +746,11 @@ async def downloadCapture(pageid):
     await downloadPlugins(pageid)
     consoleLog("Downloading images...")
     await downloadPics(pageid)
+    open("api/v1/event", "a").close()
     if CLA.getCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD):
         consoleLog("Downloading primary model assets...")
         await downloadMainAssets(pageid, accessurl)
-    os.chdir(page_root_dir)
-    open("api/v1/event", "a").close()
+    os.chdir(THIS_MODEL_ROOT_DIR)
     PROGRESS.ClearRelative()
     consoleLog(f"Done, {PROGRESS}!")
 
