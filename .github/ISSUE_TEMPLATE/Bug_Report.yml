@@ -21,6 +21,19 @@ body:
   validations:
     required: true
 
+
+- type: dropdown
+  id: download
+  attributes:
+    label: Can you reproduce this issue with the sample small digital twin https://my.matterport.com/show/?m=EGxFGTFyC9N
+    options:
+      - I Don't Know, did not take the time to test it
+      - 'Yes'
+      - 'No'
+      - Not applicable (ie bug the uses some matterport feature that you cannot use on the basic twin)
+  validations:
+    required: true
+
 - type: input
   attributes:
     label: Started up message
@@ -50,7 +63,7 @@ body:
 - type: textarea
   attributes:
     label: What went wrong
-    placeholder: What happened instead?
+    placeholder: What happened instead? If the problem shows up when going to view the model look at the console output for any lines like `###### 404 error` these are likely new files from matterport we need to add to the downloader.
   validations:
     required: true
 
