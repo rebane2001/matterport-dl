@@ -925,13 +925,17 @@ async def initiateDownload(url):
 
 
 def getPageId(url):
-    return url.split("m=")[-1].split("&")[0]
+    id = url.split("m=")[-1].split("&")[0]
+    if not id.isalnum() or len(id) < 5 or len(id) > 15:
+        raise Exception(f"Likely invalid model id extracted: {id} from your input of: {url} you should pass the ID itself (ie EGxFGTFyC9N) or the url: form like: https://my.matterport.com/show/?m=EGxFGTFyC9N")
+    return id
+
 
 
 class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
     def send_error(self, code, message=None, explain=None):
         if code == 404:
-            logging.warning(f"404 error: {self.path} may not be downloading everything right")
+            consoleLog(f"###### 404 error: {self.path} may not be downloading everything right", logging.WARNING)
         SimpleHTTPRequestHandler.send_error(self, code, message, explain)
 
     def log_request(self, code='-', size='-'):
@@ -1232,7 +1236,7 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to=ArgAppliesTo.BOTH)
     CLA.addCommandLineArg(CommandLineArg.BRUTE_JS, "downloading the range of matterports many JS files numbered 1->999.js, through trying them all rather than just the ones we know", False)
     CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
-    CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run", sys.platform == "win32")
+    CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, you must use the same option during the capture and serving", sys.platform == "win32")
     CLA.addCommandLineArg(CommandLineArg.ALIAS, "create an alias symlink for the download with this name, does not override any existing (can be used when serving)", "", itemValueHelpDisplay="name")
     CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD, "downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts", True)
     CLA.addCommandLineArg(CommandLineArg.DEBUG, "debug mode enables select debug output to console or the debug/ folder mostly for developers", False, allow_saved=False)
@@ -1291,9 +1295,9 @@ if __name__ == "__main__":
 
     elif len(sys.argv) == 4 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
         try:
-            logging.basicConfig(filename="server.log", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+            logging.basicConfig(filename="server.log", filemode="w", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         except ValueError:
-            logging.basicConfig(filename="server.log", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+            logging.basicConfig(filename="server.log", filemode="w", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
         twinDir = getPageId(pageId)
         if not os.path.exists(twinDir):
