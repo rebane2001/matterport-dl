@@ -726,7 +726,7 @@ async def downloadCapture(pageid):
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         content = RemoteDomainsReplace(content)
     else:
-        content = re.sub(r"(?P<preDomain>src\s*=\s*[" '"])https?://[^/' '"]+/', r"\g<preDomain>", content, flags=re.IGNORECASE)
+        content = re.sub(r"(?P<preDomain>src\s*=\s*['" '"])https?://[^/"' "']+/", r"\g<preDomain>", content, flags=re.IGNORECASE)
         proxyAdd = "<script blocking='render' src='JSNetProxy.js'></script>"
 
     content = validUntilFix(content)
