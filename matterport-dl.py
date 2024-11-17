@@ -202,7 +202,7 @@ async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, 
 async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
     global PROGRESS
     useTmpFileName = ""
-    async with aiofiles.tempfile.NamedTemporaryFile(delete_on_close=False) as tmpFile:  # type: ignore
+    async with aiofiles.tempfile.NamedTemporaryFile() as tmpFile:  # type: ignore
         useTmpFileName = cast(str, tmpFile.name)
 
     result = await downloadFileAndGetText(type, shouldExist, url, useTmpFileName, post_data)
@@ -545,7 +545,7 @@ async def downloadPlugins(pageid):
     with open("api/v1/plugins", "r", encoding="UTF-8") as f:
         pluginJson = json.loads(f.read())
     for plugin in pluginJson:
-        plugPath = f"showcase-sdk/plugins/published/{plugin["name"]}/{plugin["currentVersion"]}/plugin.json"
+        plugPath = f"showcase-sdk/plugins/published/{plugin['name']}/{plugin['currentVersion']}/plugin.json"
         await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
 
 
@@ -808,7 +808,7 @@ async def AdvancedAssetDownload(base_page_text: str):
             base_node["locations"] = base_cache_node["locations"]
 
         toDownload: list[AsyncDownloadItem] = []
-        consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tileset indexes: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
+        consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots['assets']['photos'])} meshes: {len(base_node['assets']['meshes'])}, locations: {len(base_node['locations'])}, tileset indexes: {len(base_node['assets']['tilesets'])}, textures: {len(base_node['assets']['textures'])}, ")
 
         for mesh in base_node["assets"]["meshes"]:
             toDownload.append(AsyncDownloadItem("ADV_MODEL_MESH", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:]))  # not expecting the non 50k one to work but mgiht as well try
