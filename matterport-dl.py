@@ -41,7 +41,7 @@ MAX_CONCURRENT_TASKS = 64  # while we could theoretically leave this unbound jus
 
 BASE_MATTERPORT_DOMAIN = "matterport.com"
 CHINA_MATTERPORT_DOMAIN = "matterportvr.cn"
-
+MAIN_SHOWCASE_FILENAME = "" #the filename for the main showcase runtime
 # Matterport uses various access keys for a page, when the primary key doesnt work we try some other ones,  note a single model can have 1400+ unique access keys not sure which matter vs not
 accesskeys = []
 
@@ -391,12 +391,25 @@ def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParam
 
     logging.log(logLevel, f"{logPrefix} REQ for {type} {requestID}: should exist: {shouldExist} {optionalResult} File: {localTarget} at url: {url} {additionalParams}")
 
+def extractJSDict(forWhat : str, str : str):
+    ret : dict[str,str] = {}
+    # Expects a string where the first { starts the dict and last } ends it. 
+    startPos = str.find("{")
+    if startPos == -1:
+        raise Exception(f"Unable to extract JS dictionary for: {forWhat} from the JS string: {str} can't find first {{")
+    endPos = str.rfind("}")
+    if endPos == -1:
+        raise Exception(f"Unable to extract JS dictionary for: {forWhat} from the JS string: {str} can't find last }}")
+    str = str[startPos+1:endPos]
+    pairs=str.split(",")
+    for kvp in pairs:
+        arr=kvp.replace("\"","").split(":")
+        ret[arr[0]] = arr[1]
+    return ret
 
-async def downloadAssets(base):
-    global PROGRESS, BASE_MATTERPORT_DOMAIN
 
-    # not really used any more unless we run into bad results
-    numeric_js_files = [30, 39, 46, 47, 58, 62, 66, 76, 79, 134, 136, 143, 164, 207, 250, 251, 260, 300, 309, 316, 321, 330, 356, 371, 376, 383, 385, 386, 393, 399, 422, 423, 438, 464, 519, 521, 524, 525, 539, 564, 580, 584, 606, 614, 633, 666, 670, 674, 718, 721, 726, 755, 764, 769, 794, 828, 833, 838, 856, 926, 932, 933, 934, 947, 976, 995]
+async def downloadAssets(base,base_page_text):
+    global PROGRESS, BASE_MATTERPORT_DOMAIN, MAIN_SHOWCASE_FILENAME
 
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM", "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg", "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en", "en-US", "en-EG", "en-AU", "en-GB", "en-CA", "en-NZ", "en-IE", "en-ZA", "en-JM", "en-BZ", "en-TT", "et", "fo", "fa", "fi", "fr", "fr-BE", "fr-CA", "fr-CH", "fr-LU", "gd", "gd-IE", "de", "de-CH", "de-AT", "de-LU", "de-LI", "el", "he", "hi", "hu", "is", "id", "it", "it-CH", "ja", "ko", "lv", "lt", "mk", "mt", "no", "pl", "pt-BR", "pt", "rm", "ro", "ro-MO", "ru", "ru-MI", "sz", "sr", "sk", "sl", "sb", "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO", "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI", "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh", "ji", "zu"]
     font_files = ["ibm-plex-sans-100", "ibm-plex-sans-100italic", "ibm-plex-sans-200", "ibm-plex-sans-200italic", "ibm-plex-sans-300", "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic", "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic", "roboto-300", "roboto-300italic", "roboto-500", "roboto-500italic", "roboto-700", "roboto-700italic", "roboto-900", "roboto-900italic", "roboto-italic", "roboto-regular"]
@@ -407,28 +420,86 @@ async def downloadAssets(base):
     assets = ["js/browser-check.js", "css/showcase.css", "css/scene.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png", "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/split.css", "css/late.css", "matterport-logo.svg"]
 
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
-    file = "js/showcase.js"
-    typeDict = {file: "STATIC_JS"}
-    await downloadFile("STATIC_ASSET", True, f"https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
-    showcase_cont = await downloadFileAndGetText(typeDict[file], True, base + file, file, always_download=True)
-
-    # lets try to extract the js files it might be loading and make sure we know them
-    js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
-    js_extracted.sort()
+    base_page_js_loads = re.findall(r"script src=[\"']([^\"']+[.]js)[\"']",base_page_text,flags=re.IGNORECASE)
+    
+    typeDict : dict[str,str] = {}
     for asset in assets:
         typeDict[asset] = "STATIC_ASSET"
 
-    for js in numeric_js_files:
-        file = f"js/{js}.js"
-        typeDict[file] = "STATIC_JS"
-        assets.append(file)
-
-    for js in js_extracted:
-        file = f"js/{js}.js"
-        if file not in assets:
-            typeDict[file] = "DISCOVERED_JS"
+    for js in base_page_js_loads:
+        file = js
+        if "://" in js:
+            consoleDebugLog(f"Skipping {js} should be the three.js file as the only non-relative one")
+        #if "://" not in js:
+            #file = base + js
+        if file in assets:
+            continue
+        typeDict[file] = "HTML_DISCOVERED_JS"
+        if "runtime" in js and "showcase" in js:
+            MAIN_SHOWCASE_FILENAME = file
+        else:
             assets.append(file)
+    
+    
+    await downloadFile("STATIC_ASSET", True, f"https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
+    showcase_cont = await downloadFileAndGetText(typeDict[MAIN_SHOWCASE_FILENAME], True, base + MAIN_SHOWCASE_FILENAME, MAIN_SHOWCASE_FILENAME, always_download=True)
 
+    # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
+    #js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
+    # here is how the JS is prettied up (aka with spaces).  First are JS files with specific names, second are the js files to key, and finally are the css files.   The js files with specific names you still need the key for just instead of [number].[key].js it is [name].[key].js
+    # , d.u = e => "js/" + ({
+	# 	239: "three-examples",
+	# 	777: "split",
+	# 	1662: "sdk-bundle",
+	# 	9114: "core",
+	# 	9553: "control-kit"
+	# } [e] || e) + "." + {
+	# 	172: "6c50ed8e5ff7620de75b",
+	# 	9553: "8aa28bbfc8f4948fd4d1",
+	# 	9589: "dc4901b493f7634edbcf",
+	# 	9860: "976dc6caac98abda24c9"
+	# } [e] + ".js", d.miniCssF = e => "css/" + ({
+	# 	7475: "late",
+	# 	9114: "core"
+	# } [e] || e) + ".css"
+
+    match = re.search(r"""
+                "js/"\+ # find js/+  (literal plus)
+                (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
+                (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
+                css #stopping when we see the css
+                (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [ 
+                .+? #skip the minimum amount to get to next part
+                miniCss=.+? #find miniCss= then skip minimum to first &&
+                &&
+                (?P<CSSFileToKey>.+?) #capture minimum until we get to next &&
+                &&
+              """, showcase_cont, re.X)
+    if match is None:
+        raise Exception("Unable to extract js files and css files from showcase runtime js file")
+    groupDict = match.groupdict()
+    jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"] )
+    jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"] )
+    cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles",  groupDict["namedCSSFiles"] )
+    cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"] )
+
+
+    for number, key in jsKeyDict.items():
+        name=number
+        if name in jsNamedDict:
+            name = jsNamedDict[name]
+        file = f"js/{name}.{key}.js"
+        typeDict[file] = "SHOWCASE_DISCOVERED_JS"
+        assets.append(file)
+    
+    for number, key in cssKeyDict.items():
+        name=number
+        if name in cssNamedDict:
+            name = cssNamedDict[name]
+        file = f"css/{name}.css" #key is not used for css its just 1 always
+        typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
+        assets.append(file)        
+        
     for image in image_files:
         if not image.endswith(".jpg") and not image.endswith(".svg"):
             image = image + ".png"
@@ -452,21 +523,10 @@ async def downloadAssets(base):
         if local_file.endswith("/"):
             local_file = local_file + "index.html"
         shouldExist = True
-        # if type.startswith("BRUTE"):
-        #     shouldExist = False
         toDownload.append(AsyncDownloadItem(type, shouldExist, f"{base}{asset}", local_file))
     await AsyncArrayDownload(toDownload)
 
     toDownload.clear()
-    if CLA.getCommandLineArg(CommandLineArg.BRUTE_JS):
-        for x in range(1, 1000):
-            file = f"js/{x}.js"
-            if file not in assets:
-                toDownload.append(AsyncDownloadItem("BRUTE_JS", False, f"{base}{file}", file))
-                assets.append(file)
-        before = PROGRESS.Val(ProgressType.Success)
-        consoleLog("Brute force additional JS files...")
-        await AsyncArrayDownload(toDownload)
 
 
 async def downloadWebglVendors(urls):
@@ -579,8 +639,7 @@ async def downloadMainAssets(pageid, accessurl):
 # Patch showcase.js to fix expiration issue
 def patchShowcase():
     global BASE_MATTERPORT_DOMAIN
-    showcaseJs = "js/showcase.js"
-    with open(showcaseJs, "r", encoding="UTF-8") as f:
+    with open(MAIN_SHOWCASE_FILENAME, "r", encoding="UTF-8") as f:
         j = f.read()
     j = re.sub(r"\&\&\(!e.expires\|\|.{1,10}\*e.expires>Date.now\(\)\)", "", j)  # old
     j = j.replace("this.urlContainer.expires", "Date.now()")  # newer
@@ -592,7 +651,7 @@ def patchShowcase():
     j = j.replace(f'e.get("https://static.{BASE_MATTERPORT_DOMAIN}/geoip/",{{responseType:"json",priority:n.ru.LOW}})', '{"country_code":"US","country_name":"united states","region":"CA","city":"los angeles"}')
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         j = j.replace(f"https://static.{BASE_MATTERPORT_DOMAIN}", "")
-    with open(getModifiedName(showcaseJs), "w", encoding="UTF-8") as f:
+    with open(getModifiedName(MAIN_SHOWCASE_FILENAME), "w", encoding="UTF-8") as f:
         f.write(j)
 
 
@@ -736,7 +795,7 @@ async def downloadCapture(pageid):
 
     consoleLog("Downloading static files...")
 
-    await downloadAssets(staticbase)
+    await downloadAssets(staticbase,base_page_text)
     await downloadWebglVendors(webglVendors)
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
@@ -1126,7 +1185,7 @@ def RegisterWindowsBrowsers():
             webbrowser.register(name, None, webbrowser.GenericBrowser(cmd))
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "BRUTE_JS", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS","QUIET", "HELP", "ADV_HELP", "AUTO_SERVE"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS","QUIET", "HELP", "ADV_HELP", "AUTO_SERVE"])
 ArgAppliesTo = Enum("ArgAppliesTo", ["DOWNLOAD", "SERVING", "BOTH"])
 
 
@@ -1234,7 +1293,6 @@ class CLA:
 DEFAULTS_JSON_FILE = "defaults.json"
 if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to=ArgAppliesTo.BOTH)
-    CLA.addCommandLineArg(CommandLineArg.BRUTE_JS, "downloading the range of matterports many JS files numbered 1->999.js, through trying them all rather than just the ones we know", False)
     CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, you must use the same option during the capture and serving", sys.platform == "win32")
     CLA.addCommandLineArg(CommandLineArg.ALIAS, "create an alias symlink for the download with this name, does not override any existing (can be used when serving)", "", itemValueHelpDisplay="name")
