@@ -4,6 +4,15 @@ const _hostRegex = new RegExp( /(https?:\/\/[^/]+)/,"i");
 window._replaceHost = function(str){
 	if (! str)
 		return str;
+	if (window._ProxyAppendURL) {
+		const encodedOrig = window.btoa(str);
+		if (str.includes("?"))
+			str +="&";
+		else
+			str +="?";
+		str += "__OU=" + encodedOrig;
+	}
+
 	if (window._NoTilde)
 		str = str.replace("~","_")
 	return str.replace(_hostRegex,window._ProxyBase);
