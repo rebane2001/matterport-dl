@@ -48,6 +48,7 @@ accesskeys = []
 
 dirsMadeCache: dict[str, bool] = {}
 THIS_MODEL_ROOT_DIR : str
+SERVED_BASE_URL : str #url we are serving from ie http://127.0.0.1:8080
 
 # modified from https://gist.github.com/pkienzle/5e13ec07077d32985fa48ebe43486832
 def git_rev():
@@ -779,6 +780,7 @@ async def downloadCapture(pageid):
     # Automatic redirect if GET param isn't correct
     forcedProxyBase = "window.location.origin"
     # forcedProxyBase='"http://127.0.0.1:9000"'
+    # window._ProxyAppendURL=1;
     injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; };window._NoTilde=' + ("false" if CLA.getCommandLineArg(CommandLineArg.TILDE) else "true") + ";window._ProxyBase=" + forcedProxyBase + ";"
     content = base_page_text.replace(staticbase, ".")
     proxyAdd = ""
@@ -1368,7 +1370,7 @@ if __name__ == "__main__":
         else:
             os.chdir(twinDir)
         logging.info(f"Server starting up {sys_info()}")
-        url = "http://" + sys.argv[2] + ":" + sys.argv[3]
+        SERVED_BASE_URL = url = "http://" + sys.argv[2] + ":" + sys.argv[3]
         print("View in browser: " + url)
         httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
         if browserLaunch:
