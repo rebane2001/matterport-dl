@@ -1,16 +1,15 @@
 
 const _hostRegex = new RegExp( /(https?:\/\/[^/]+)/,"i");
-
 window._replaceHost = function(str){
 	if (! str)
 		return str;
 	if (window._ProxyAppendURL) {
-		const encodedOrig = window.btoa(str);
+		const encodedOrig = str;
 		if (str.includes("?"))
 			str +="&";
 		else
 			str +="?";
-		str += "__OU=" + encodedOrig;
+		str += "__OU=" + encodeURIComponent(encodedOrig);
 	}
 
 	if (window._NoTilde)
