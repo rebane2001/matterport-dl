@@ -156,6 +156,7 @@ async def downloadUUID(accessurl, uuid):
 
 
 async def downloadSweeps(accessurl, sweeps):
+    # the sweep query at least has data.model.defurnishViews[0].model.id for others
     toDownload: list[AsyncDownloadItem] = []
     for sweep in sweeps:
         sweep = sweep.replace("-", "")
@@ -289,7 +290,8 @@ async def downloadGraphModels(pageid):
     for key in GRAPH_DATA_REQ:
         file_path_base = f"api/mp/models/graph_{key}"
         file_path = f"{file_path_base}.json"
-        text = await downloadFileWithJSONPostAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph", file_path, GRAPH_DATA_REQ[key], key, CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
+        req_url = GRAPH_DATA_REQ[key].replace("[MATTERPORT_MODEL_ID]",pageid)
+        text = await downloadFileAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph{req_url}", file_path, always_download=CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
 
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
@@ -418,7 +420,7 @@ async def downloadAssets(base,base_page_text):
     # extension assumed to be .png unless it is .svg or .jpg, for anything else place it in assets
     image_files = ["360_placement_pin_mask", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior", "exterior_hover", "firefox", "headset-cardboard", "headset-quest", "interior", "interior_hover", "matterport-logo-light.svg", "matterport-logo.svg", "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag", "nav_help_gesture_drag_two_finger", "nav_help_gesture_pinch", "nav_help_gesture_position", "nav_help_gesture_position_two_finger", "nav_help_gesture_tap", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down", "nav_help_mouse_click", "nav_help_mouse_ctrl_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left", "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "NoteIcon", "pinAnchor", "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask", "vert_arrows", "headset-quest-2", "pinIconDefault", "tagColor", "matterport-app-icon.svg"]
 
-    assets = ["js/browser-check.js", "css/showcase.css", "css/scene.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png", "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/split.css", "css/late.css", "matterport-logo.svg"]
+    assets = ["js/browser-check.js", "css/showcase.css","css/packages-nova-ui.css", "css/scene.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png", "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/split.css", "css/late.css", "matterport-logo.svg"]
 
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
     base_page_js_loads = re.findall(r"script src=[\"']([^\"']+[.]js)[\"']",base_page_text,flags=re.IGNORECASE)
@@ -427,6 +429,8 @@ async def downloadAssets(base,base_page_text):
     for asset in assets:
         typeDict[asset] = "STATIC_ASSET"
 
+    
+    showcase_runtime_filename=""
     for js in base_page_js_loads:
         file = js
         if "://" in js:
@@ -436,14 +440,19 @@ async def downloadAssets(base,base_page_text):
         if file in assets:
             continue
         typeDict[file] = "HTML_DISCOVERED_JS"
-        if "runtime" in js and "showcase" in js:
-            MAIN_SHOWCASE_FILENAME = file
+        if "showcase" in js:
+            if "runtime" in js:
+                showcase_runtime_filename = file
+            else:
+                MAIN_SHOWCASE_FILENAME = file
+                assets.append(file)
+                
         else:
             assets.append(file)
     
     
     await downloadFile("STATIC_ASSET", True, f"https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
-    showcase_cont = await downloadFileAndGetText(typeDict[MAIN_SHOWCASE_FILENAME], True, base + MAIN_SHOWCASE_FILENAME, MAIN_SHOWCASE_FILENAME, always_download=True)
+    showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=True)
 
     # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
     #js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
@@ -634,6 +643,7 @@ async def downloadMainAssets(pageid, accessurl):
     makeDirs(basePath)
     os.chdir(basePath)
     await downloadUUID(accessurl, modeldata["job"]["uuid"])
+    #now: getShowcaseSweeps then need to iterate the locatiosn and get the uuid data.model.locations[0].pano.sweepUuid
     await downloadSweeps(accessurl, modeldata["sweeps"]) #sweeps are generally the biggest thing minus a few modles that have massive 3d detail items
     os.chdir(THIS_MODEL_ROOT_DIR)
 
@@ -871,13 +881,16 @@ async def AdvancedAssetDownload(base_page_text: str):
         toDownload: list[AsyncDownloadItem] = []
         consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tileset indexes: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
+        #now: getmodeldetails: data.model.assets.meshes
         for mesh in base_node["assets"]["meshes"]:
             toDownload.append(AsyncDownloadItem("ADV_MODEL_MESH", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:]))  # not expecting the non 50k one to work but mgiht as well try
 
+        # now: instead from the snapshots graph data: data.model.assets.photos
         for photo in base_node_snapshots["assets"]["photos"]:
             toDownload.append(AsyncDownloadItem("ADV_MODEL_IMAGES", True, photo["presentationUrl"], urlparse(photo["presentationUrl"]).path[1:]))
 
         # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
+        # now: getsweeps graph data: data.model.locations
         for location in base_node["locations"]:
             for skybox in location["pano"]["skyboxes"]:
                 try:
@@ -889,6 +902,7 @@ async def AdvancedAssetDownload(base_page_text: str):
 
         consoleLog("Going to download tileset 3d asset models")
         # Download Tilesets
+        #now: getmodeldetails: data.model.assets.tilesets
         for tileset in base_node["assets"]["tilesets"]:  # normally just one tileset
             tilesetUrl = tileset["url"]
             tilesetUrlTemplate: str = tileset["urlTemplate"]
@@ -940,6 +954,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                 except:
                     pass
 
+        #now: getmodeldetails: data.model.assets.textures
         for texture in base_node["assets"]["textures"]:
             try:  # on first exception assume we have all the ones needed so cant use array download as need to know which fails (other than for crops)
                 for i in range(1000):
@@ -1038,6 +1053,10 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
         orig_raw_path = raw_path = self.getRawPath()
         query = self.getQuery()
+        if urlparse(self.path).path == "/api/mp/models/graph":
+            query_args = urllib.parse.parse_qs(query)
+            self.do_GraphRequest(query_args.get("operationName",[None])[0])
+            return
 
         if raw_path.endswith("/"):
             raw_path += "index.html"
@@ -1091,30 +1110,35 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             if raw_path.endswith(f".{ext}"):
                 return True
         return False
+    def do_GraphRequest(self, option_name : str):
+        post_msg = None
+        logLevel = logging.INFO
+        if option_name in GRAPH_DATA_REQ:
+            self.send_response(200)
+            self.end_headers()
+            file_path = f"api/mp/models/graph_{option_name}.json"
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="UTF-8") as f:
+                    self.wfile.write(f.read().encode("utf-8"))
+                    post_msg = f"graph of operationName: {option_name} we are handling internally"
+            else:
+                logLevel = logging.WARNING
+                post_msg = f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead. If you get an error this may be why (include this message in bug report)."
+                self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
+
+        if post_msg is not None:
+            logging.log(logLevel, f"Handling a graph request on {self.path}: {post_msg}")
 
     def do_POST(self):
         post_msg = None
         logLevel = logging.INFO
         try:
             if urlparse(self.path).path == "/api/mp/models/graph":
-                self.send_response(200)
-                self.end_headers()
                 content_len = int(self.headers.get("content-length") or "0")
                 post_body = self.rfile.read(content_len).decode("utf-8")
                 json_body = json.loads(post_body)
                 option_name = json_body["operationName"]
-                if option_name in GRAPH_DATA_REQ:
-                    file_path = f"api/mp/models/graph_{option_name}.json"
-                    if os.path.exists(file_path):
-                        with open(file_path, "r", encoding="UTF-8") as f:
-                            self.wfile.write(f.read().encode("utf-8"))
-                            post_msg = f"graph of operationName: {option_name} we are handling internally"
-                            return
-                    else:
-                        logLevel = logging.WARNING
-                        post_msg = f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead. If you get an error this may be why (include this message in bug report)."
-
-                self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
+                self.do_GraphRequest(option_name)
                 return
         except Exception as error:
             logLevel = logging.ERROR
@@ -1133,22 +1157,16 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         return res
 
 
-GRAPH_DATA_REQ = {}
+GRAPH_DATA_REQ = {
+    "GetModelDetails":"?operationName=GetModelDetails&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22012c3d36cdf890ba8e49dfd66b1072a2dbb573e672d72482eff86a2563530f46%22%7D%7D",
+    "GetModelViewPrefetch":"?operationName=GetModelViewPrefetch&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%2C%22includeDisabled%22%3Afalse%2C%22includeLayers%22%3Atrue%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22ed65e7307756d949f0e7cdab0cf79ee0b0797cc9c494d8811a2bb3025cd7bce6%22%7D%7D",
+    "GetRoomBounds":"?operationName=GetRoomBounds&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2214f99a0c44512f435987f1305eacdaea7ca600f2b5e9022499087188e63915aa%22%7D%7D",
+    "GetShowcaseSweeps":"?operationName=GetShowcaseSweeps&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%220faff869a8ae9385fe262d18ea1f731bbbeb3d618c036e60a8d0d630ae3526a5%22%7D%7D",
+    "GetSnapshots":"?operationName=GetSnapshots&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22510bd772b16a48aa4ea74aa290373225eeb306b3162fa34c75d6f643daf3f22b%22%7D%7D",
+}
 OUR_SESSION: requests.AsyncSession
 MAX_TASKS_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 RUN_ARGS_CONFIG_NAME = "run_args.json"
-
-
-def openDirReadGraphReqs(path, pageId):
-    for root, dirs, filenames in os.walk(path):
-        for file in filenames:
-            lfile = file.lower()
-            if not lfile.startswith("get") or not lfile.endswith(".json"): #fixes evil osx files
-                continue
-            with open(os.path.join(root, file), "r", encoding="UTF-8") as f:
-                if "modified" in file:
-                    continue
-                GRAPH_DATA_REQ[file.replace(".json", "")] = f.read().replace("[MATTERPORT_MODEL_ID]", pageId)
 
 
 def SetupSession(use_proxy):
@@ -1349,16 +1367,11 @@ if __name__ == "__main__":
             CLA.parseArgs()
         except:
             pass
-    openDirReadGraphReqs(os.path.join(BASE_MATTERPORTDL_DIR, "graph_posts"), pageId)
+    
     if len(sys.argv) == 2 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
         asyncio.run(initiateDownload(pageId))
 
     elif len(sys.argv) == 4 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
-        try:
-            logging.basicConfig(filename="server.log", filemode="w", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            logging.basicConfig(filename="server.log", filemode="w", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-
         twinDir = getPageId(pageId)
         if not os.path.exists(twinDir):
             fullPath = os.path.abspath(twinDir)
@@ -1369,6 +1382,12 @@ if __name__ == "__main__":
                 raise Exception(f"Unable to change to download directory for twin of: {fullPath} or {os.path.abspath(relativeToScriptDir)} make sure the download is there")
         else:
             os.chdir(twinDir)
+        try:
+            logging.basicConfig(filename="server.log", filemode="w", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            logging.basicConfig(filename="server.log", filemode="w", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+
         logging.info(f"Server starting up {sys_info()}")
         SERVED_BASE_URL = url = "http://" + sys.argv[2] + ":" + sys.argv[3]
         print("View in browser: " + url)
