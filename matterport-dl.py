@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 import pathlib
 import re
 import os
+import hashlib
+import pprint
 import platform
 
 import shutil
@@ -43,13 +45,18 @@ BASE_MATTERPORT_DOMAIN = "matterport.com"
 CHINA_MATTERPORT_DOMAIN = "matterportvr.cn"
 MAIN_SHOWCASE_FILENAME = "" #the filename for the main showcase runtime
 # Matterport uses various access keys for a page, when the primary key doesnt work we try some other ones,  note a single model can have 1400+ unique access keys not sure which matter vs not
-accesskeys = []
+
 
 
 dirsMadeCache: dict[str, bool] = {}
 THIS_MODEL_ROOT_DIR : str
 SERVED_BASE_URL : str #url we are serving from ie http://127.0.0.1:8080
 
+#if no git revision fall back to our sha
+def self_sha():
+    with open(pathlib.Path(__file__).resolve(), "rb") as f:
+        return hashlib.file_digest(f, "sha1").hexdigest()
+    
 # modified from https://gist.github.com/pkienzle/5e13ec07077d32985fa48ebe43486832
 def git_rev():
     """
@@ -91,7 +98,16 @@ def sys_info():
     try:
         str += platform.python_version()
         str += " on " + sys.platform
-        str += " with matterport-dl version: " + git_rev()
+        ourVersion = None
+        try:
+            ourVersion = git_rev()
+        except Exception:
+            pass
+        
+        if ourVersion is None:
+            ourVersion = "S " + self_sha()
+
+        str += " with matterport-dl version: " + ourVersion
     except Exception:
         pass
     return str
@@ -130,6 +146,7 @@ def getModifiedName(filename: str):
 
 def getVariants():
     variants = []
+    # to be smart we should be using the GetShowcaseSweeps file and data.model.locations[4].pano.resolutions  to determine if we should be trying 2k or 4k
     depths = ["512", "1k", "2k", "4k"]
     for depth in range(4):
         z = depths[depth]
@@ -140,9 +157,11 @@ def getVariants():
     return variants
 
 
-async def downloadUUID(accessurl, uuid):
-    await downloadFile("UUID_DAM50K", True, accessurl.format(filename=f"{uuid}_50k.dam"), f"{uuid}_50k.dam")
-    shutil.copy(f"{uuid}_50k.dam", f"..{os.path.sep}{uuid}_50k.dam")
+async def downloadDAM(accessurl, uuid):
+    # This should have already been downloaded during the ADV download
+    damSrcFile=f"..{os.path.sep}{uuid}_50k.dam"
+    await downloadFile("UUID_DAM50K", True, accessurl.format(filename=f"{uuid}_50k.dam"), f"..{os.path.sep}{uuid}_50k.dam",force_key=KeyHandler.GetAccessKey(AccessKeyType.FILES3_TEMPLATE_KEY))
+    shutil.copy(damSrcFile, f"{uuid}_50k.dam") #so the url here has the ~ in it but the primary dir is the parent sitl lwe will store it both places
     cur_file = ""
     try:
         for i in range(1000):  # basically download until on first failure and assume that is all of them, maybe we should be going to on first 404 or osmething:)
@@ -160,7 +179,7 @@ async def downloadSweeps(accessurl, sweeps):
     toDownload: list[AsyncDownloadItem] = []
     for sweep in sweeps:
         sweep = sweep.replace("-", "")
-        for variant in getVariants():
+        for variant in getVariants(): #so if we checked for 404s we could do this more effeciently but serializing it to do that would be slower than just a bunch of 404s
             toDownload.append(AsyncDownloadItem("MODEL_SWEEPS", True, accessurl.format(filename=f"tiles/{sweep}/{variant}") + "&imageopt=1", f"tiles/{sweep}/{variant}"))
     await AsyncArrayDownload(toDownload)
 
@@ -176,7 +195,7 @@ async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_
         async with aiofiles.open(file, "r", encoding="UTF-8") as f:
             return await f.read()
 
-
+#does not use access keys currently not needed
 async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, descriptor, always_download=False):
     global OUR_SESSION
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
@@ -184,7 +203,7 @@ async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, 
     if "/" in file:
         makeDirs(os.path.dirname(file))
 
-    if not CLA.getCommandLineArg(CommandLineArg.DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except index.html which is really json possibly wit hnewer access keys?
+    if not CLA.getCommandLineArg(CommandLineArg.DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except forced downloads
         logUrlDownloadSkipped(type, file, url, descriptor)
         return
 
@@ -217,11 +236,11 @@ async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
     return result
 
 
-async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, isBinary=False, always_download=False):
+async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, isBinary=False, always_download=False, force_key=None):
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
         file = file.replace("~", "_")
 
-    await downloadFile(type, shouldExist, url, file, post_data, always_download)
+    await downloadFile(type, shouldExist, url, file, post_data, always_download, force_key)
     if not os.path.exists(file):
         return ""
     else:
@@ -235,10 +254,10 @@ async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, i
 
 
 # Add type parameter, shortResourcePath, shouldExist
-async def downloadFile(type, shouldExist, url, file, post_data=None, always_download=False):
-    global accesskeys, MAX_TASKS_SEMAPHORE, OUR_SESSION
+async def downloadFile(type, shouldExist, url, file, post_data=None, always_download=False, force_key=None):
+    global MAX_TASKS_SEMAPHORE, OUR_SESSION
     async with MAX_TASKS_SEMAPHORE:
-        url = GetOrReplaceKey(url, False)
+        url = KeyHandler.SetAccessKeyForUrl(url, force_key)
 
         if not CLA.getCommandLineArg(CommandLineArg.TILDE):
             file = file.replace("~", "_")
@@ -248,7 +267,7 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
         if "?" in file:
             file = file.split("?")[0]
 
-        if not CLA.getCommandLineArg(CommandLineArg.DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except idnex.html which is really json possibly wit hnewer access keys?
+        if not CLA.getCommandLineArg(CommandLineArg.DOWNLOAD) or (os.path.exists(file) and not always_download):  # skip already downloaded files except always download ones which are genreally ones that may contain keys?
             logUrlDownloadSkipped(type, file, url, "")
             return
         reqId = logUrlDownloadStart(type, file, url, "", shouldExist)
@@ -260,22 +279,23 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
             logUrlDownloadFinish(type, file, url, "", shouldExist, reqId)
             return
         except Exception as err:
-            # Try again but with different accesskeys
-            if "?t=" in url:
-                for accessurl in accesskeys:
-                    url2 = ""
-                    try:
-                        url2 = f"{url.split('?')[0]}?{accessurl}"
-                        response = await OUR_SESSION.get(url2)
-                        response.raise_for_status()  # Raise an exception if the response has an error status code
+            # Try again but with different accesskeys, if error is 404 though no need to retry
+            if "?t=" in url and "Error 404" not in f'{err}':
+                if False: #disable brute forcing at a minimum probably shouldnt do getallkeys just primary
+                    for key in KeyHandler.GetAllKeys():
+                        url2 = ""
+                        try:
+                            url2 = KeyHandler.SetAccessKeyForUrl(url,key)
+                            response = await OUR_SESSION.get(url2)
+                            response.raise_for_status()  # Raise an exception if the response has an error status code
 
-                        async with aiofiles.open(file, "wb") as f:
-                            await f.write(response.content)
-                        logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId)
-                        return
-                    except Exception as err2:
-                        logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId, err2, True)
-                        pass
+                            async with aiofiles.open(file, "wb") as f:
+                                await f.write(response.content)
+                            logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId)
+                            return
+                        except Exception as err2:
+                            logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId, err2, True)
+                            pass
             logUrlDownloadFinish(type, file, url, "", shouldExist, reqId, err)
             raise Exception(f"Request error for url: {url} ({type}) that would output to: {file}") from err
 
@@ -291,8 +311,8 @@ async def downloadGraphModels(pageid):
         file_path_base = f"api/mp/models/graph_{key}"
         file_path = f"{file_path_base}.json"
         req_url = GRAPH_DATA_REQ[key].replace("[MATTERPORT_MODEL_ID]",pageid)
-        text = await downloadFileAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph{req_url}", file_path, always_download=CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
-
+        text = await downloadFileAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph{req_url}", file_path, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES) and CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
+        KeyHandler.SaveKeysFromText(f'GRAPH_{key}',text)
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
             text = text.replace(f"https://cdn-2.{BASE_MATTERPORT_DOMAIN}", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
@@ -415,6 +435,9 @@ async def downloadAssets(base,base_page_text):
     global PROGRESS, BASE_MATTERPORT_DOMAIN, MAIN_SHOWCASE_FILENAME
 
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM", "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg", "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en", "en-US", "en-EG", "en-AU", "en-GB", "en-CA", "en-NZ", "en-IE", "en-ZA", "en-JM", "en-BZ", "en-TT", "et", "fo", "fa", "fi", "fr", "fr-BE", "fr-CA", "fr-CH", "fr-LU", "gd", "gd-IE", "de", "de-CH", "de-AT", "de-LU", "de-LI", "el", "he", "hi", "hu", "is", "id", "it", "it-CH", "ja", "ko", "lv", "lt", "mk", "mt", "no", "pl", "pt-BR", "pt", "rm", "ro", "ro-MO", "ru", "ru-MI", "sz", "sr", "sk", "sl", "sb", "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO", "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI", "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh", "ji", "zu"]
+    
+    language_codes = ["zh-TW", "zh-CN","nl","de","it","ja","ko","pt","ru","es"] #these are the only language codes that seem to succeed if a model works with one other than this please file a bug report and let us know, these are hardcoded into showcase.js file
+
     font_files = ["ibm-plex-sans-100", "ibm-plex-sans-100italic", "ibm-plex-sans-200", "ibm-plex-sans-200italic", "ibm-plex-sans-300", "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic", "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic", "roboto-300", "roboto-300italic", "roboto-500", "roboto-500italic", "roboto-700", "roboto-700italic", "roboto-900", "roboto-900italic", "roboto-italic", "roboto-regular"]
 
     # extension assumed to be .png unless it is .svg or .jpg, for anything else place it in assets
@@ -452,7 +475,7 @@ async def downloadAssets(base,base_page_text):
     
     
     await downloadFile("STATIC_ASSET", True, f"https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
-    showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=True)
+    showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
 
     # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
     #js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
@@ -544,22 +567,15 @@ async def downloadWebglVendors(urls):
         await downloadFile("WEBGL_FILE", False, url, urlparse(url).path[1:])
 
 
-def setAccessURLs(pageid):
-    global accesskeys
-    with open(f"api/player/models/{pageid}/files_type2", "r", encoding="UTF-8") as f:
-        filejson = json.load(f)
-        accesskeys.append(filejson["base.url"].split("?")[-1])
-    with open(f"api/player/models/{pageid}/files_type3", "r", encoding="UTF-8") as f:
-        filejson = json.load(f)
-        accesskeys.append(filejson["templates"][0].split("?")[-1])
-
-
 class AsyncDownloadItem:
-    def __init__(self, type: str, shouldExist: bool, url: str, file: str):
+    # shouldExist is purely for information in debugging, if false we are saying it might not and thats OK,  does not change any internal logic.
+    # forceAccessKey overrides the accessKey we will change in the url,  set to KeyHandler.LeaveKeyAlone to not change the one in the url
+    def __init__(self, type: str, shouldExist: bool, url: str, file: str, forceAccessKey: str=None):
         self.type = type
         self.shouldExist = shouldExist
         self.url = url
         self.file = file
+        self.forceAccessKey = forceAccessKey
 
 
 class ExceptionWhatExceptionTaskGroup(asyncio.TaskGroup):
@@ -584,7 +600,7 @@ async def AsyncArrayDownload(assets: list[AsyncDownloadItem]):
         
         for asset in tqdm(assets):
             # pbar.update(1)
-            tg.create_task(downloadFile(asset.type, asset.shouldExist, asset.url, asset.file))
+            tg.create_task(downloadFile(asset.type, asset.shouldExist, asset.url, asset.file,force_key=asset.forceAccessKey))
             await asyncio.sleep(0.001)  # we need some sleep or we will not yield
             while MAX_TASKS_SEMAPHORE.locked():
                 await asyncio.sleep(0.01)
@@ -592,7 +608,7 @@ async def AsyncArrayDownload(assets: list[AsyncDownloadItem]):
 
 async def downloadInfo(pageid):
     global BASE_MATTERPORT_DOMAIN
-    assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v1/player/models/{pageid}/", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files", f"api/v1/jsonstore/model/trims/{pageid}", "api/v1/plugins?manifest=true", f"api/v1/jsonstore/model/plugins/{pageid}"]
+    assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files", f"api/v1/jsonstore/model/trims/{pageid}", "api/v1/plugins?manifest=true", f"api/v1/jsonstore/model/plugins/{pageid}"]
     toDownload: list[AsyncDownloadItem] = []
     for asset in assets:
         local_file = asset
@@ -601,13 +617,17 @@ async def downloadInfo(pageid):
         toDownload.append(AsyncDownloadItem("MODEL_INFO", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/{asset}", local_file))
     await AsyncArrayDownload(toDownload)
 
+    pageJsonFile=f"api/v1/player/models/{pageid}/"
+    modelJson = await downloadFileAndGetText("MODEL_INFO", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/{pageJsonFile}", f"{pageJsonFile}/index.html",always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    KeyHandler.SaveKeysFromText("ApiV1PlayerModelsJson",modelJson)
+
     makeDirs("api/mp/models")
     with open("api/mp/models/graph", "w", encoding="UTF-8") as f:
         f.write('{"data": "empty"}')
     for i in range(1, 4):  # file to url mapping
-        await downloadFile("FILE_TO_URL_JSON", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}")
-    setAccessURLs(pageid)
-
+        fileText = await downloadFileAndGetText("FILE_TO_URL_JSON", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}",always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES)) #may have keys
+        KeyHandler.SaveKeysFromText(f'FilesType{i}',fileText) #used to be more elegant but now we can just gobble all the keys
+        
 
 async def downloadPlugins(pageid):
     global BASE_MATTERPORT_DOMAIN
@@ -631,6 +651,7 @@ async def downloadPics(pageid):
 
 async def downloadMainAssets(pageid, accessurl):
     global THIS_MODEL_ROOT_DIR
+    #this uses the old model json but we dont need it, the dam should have already been downloaded and the sweeps we can use getShowcaseSweeeps for
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
         modeldata = json.load(f)
     match = re.search(r"models/([a-z0-9-_./~]*)/\{filename\}", accessurl)
@@ -642,8 +663,8 @@ async def downloadMainAssets(pageid, accessurl):
         basePath = basePath.replace("~", "_")
     makeDirs(basePath)
     os.chdir(basePath)
-    await downloadUUID(accessurl, modeldata["job"]["uuid"])
-    #now: getShowcaseSweeps then need to iterate the locatiosn and get the uuid data.model.locations[0].pano.sweepUuid
+    await downloadDAM(accessurl, modeldata["job"]["uuid"])
+    #now: getShowcaseSweeps then need to iterate the locatiosn and get the uuid data.model.locations[0].pano.sweepUuid  this would resolve many of the 404s we will get by just bruteforcing  each location has its only max res (2k 4k etc) 
     await downloadSweeps(accessurl, modeldata["sweeps"]) #sweeps are generally the biggest thing minus a few modles that have massive 3d detail items
     os.chdir(THIS_MODEL_ROOT_DIR)
 
@@ -676,33 +697,6 @@ def drange(x, y, jump):
         yield float(x)
         x += decimal.Decimal(jump)
 
-
-KNOWN_ACCESS_KEY = None
-KEY_REPLACE_ACTIVE = True
-
-
-def EnableDisableKeyReplacement(enabled):
-    global KEY_REPLACE_ACTIVE
-    KEY_REPLACE_ACTIVE = enabled
-
-
-def GetOrReplaceKey(url, is_read_key):
-    global KNOWN_ACCESS_KEY, KEY_REPLACE_ACTIVE
-    if not KEY_REPLACE_ACTIVE:
-        return url
-    # key_regex = r'(t=2\-.+?\-[0-9])(&|$|")'
-    key_regex = r"(t=(.+?)&k)"
-    match = re.search(key_regex, url)
-    if match is None:
-        return url
-    url_key = match.group(1)
-    if KNOWN_ACCESS_KEY is None and is_read_key:
-        KNOWN_ACCESS_KEY = url_key
-    elif not is_read_key and KNOWN_ACCESS_KEY:
-        url = url.replace(url_key, KNOWN_ACCESS_KEY)
-    return url
-
-
 def DebugSaveFile(fileName, fileContent):
     consoleLog(f"Saved debug file: {fileName}")
     with open(f"debug/{fileName}", "w") as the_file:
@@ -722,7 +716,7 @@ def RemoteDomainsReplace(str: str):
 
 
 async def downloadCapture(pageid):
-    global KNOWN_ACCESS_KEY, PROGRESS, RUN_ARGS_CONFIG_NAME, BASE_MATTERPORT_DOMAIN, CHINA_MATTERPORT_DOMAIN, THIS_MODEL_ROOT_DIR
+    global PROGRESS, RUN_ARGS_CONFIG_NAME, BASE_MATTERPORT_DOMAIN, CHINA_MATTERPORT_DOMAIN, THIS_MODEL_ROOT_DIR
     makeDirs(pageid)
     alias = CLA.getCommandLineArg(CommandLineArg.ALIAS)
     if alias and not os.path.exists(alias):
@@ -748,7 +742,8 @@ async def downloadCapture(pageid):
     consoleLog(f"Downloading capture of {pageid} with base page... {url}")
     base_page_text = ""
     try:
-        base_page_text : str = await downloadFileAndGetText("MAIN", True, url, "index.html", always_download=True)
+        base_page_text : str = await downloadFileAndGetText("MAIN", True, url, "index.html", always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+
         if f"{CHINA_MATTERPORT_DOMAIN}/showcase" in base_page_text:
             BASE_MATTERPORT_DOMAIN = CHINA_MATTERPORT_DOMAIN
             consoleLog("Chinese matterport url found in main page, will try China server, note if this does not work try a proxy outside china")
@@ -761,6 +756,7 @@ async def downloadCapture(pageid):
         else:
             raise TypeError("First request error") from error
 
+    KeyHandler.SaveKeysFromText('MainBasePage',base_page_text)
     staticbase = re.search(rf'<base href="(https://static.{BASE_MATTERPORT_DOMAIN}/.*?)">', base_page_text).group(1)  # type: ignore - may be None
 
     threeMin = re.search(r"https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js", base_page_text).group()  # type: ignore - may be None , this is always.com
@@ -779,13 +775,10 @@ async def downloadCapture(pageid):
 
     # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
     file_type_content = await GetTextOnlyRequest("MAIN", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type=3")  # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
-    GetOrReplaceKey(file_type_content, True)
+    KeyHandler.SetAccessKey( AccessKeyType.FILES3_TEMPLATE_KEY, KeyHandler.GetKeysFromStr(file_type_content)[0] )
 
     consoleLog("Downloading graph model data...")  # need the details one for advanced download
     await downloadGraphModels(pageid)
-
-    if CLA.getCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD):
-        await AdvancedAssetDownload(base_page_text)
 
     # Automatic redirect if GET param isn't correct
     forcedProxyBase = "window.location.origin"
@@ -805,14 +798,24 @@ async def downloadCapture(pageid):
     with open(getModifiedName("index.html"), "w", encoding="UTF-8") as f:
         f.write(content)
 
-    consoleLog("Downloading static files...")
+    consoleLog("Downloading model info...")
+    await downloadInfo(pageid)
+    urlKeyFind=CLA.getCommandLineArg(CommandLineArg.FIND_URL_KEY)
+    if CLA.getCommandLineArg(CommandLineArg.DEBUG):
+        KeyHandler.DumpKnownKeysToFile()
+    if urlKeyFind:
+        await KeyHandler.PrintUrlKeys(urlKeyFind)
+        exit(0)
+    
+    consoleLog("Downloading Advanced Assets...")
+    if CLA.getCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD):
+        await AdvancedAssetDownload(base_page_text)
 
+    consoleLog("Downloading static files...")
     await downloadAssets(staticbase,base_page_text)
     await downloadWebglVendors(webglVendors)
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
-    consoleLog("Downloading model info...")
-    await downloadInfo(pageid)
     consoleLog("Downloading plugins...")
     await downloadPlugins(pageid)
     consoleLog("Downloading images...")
@@ -834,7 +837,7 @@ async def AdvancedAssetDownload(base_page_text: str):
     # queries.GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
     # queries.GetModelPrefetch.data.model.locations[X].pano.resolutions[Y] <--- has the resolutions they offer for this one
     # goal here is to move away from some of the access url hacks, but if we are successful on try one won't matter:)
-    EnableDisableKeyReplacement(False)
+    #KeyHandler.EnableDisableKeyReplacement(False)
 
     try:
         base_node: Any = None  # lets try to use this now first seems to be more accurate the precache key can be invalid in comparison
@@ -855,39 +858,57 @@ async def AdvancedAssetDownload(base_page_text: str):
             logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
 
         match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
-        preload_json_str = ""
+        preload_json_str = None
         if not match:
             match = re.search(r"window.MP_PREFETCHED_MODELDATA = parseJSON\((\"\{.+?\}\}\}\")\);", base_page_text)  # this happens for extra unicode encoded pages
-            preload_json_str = json.loads(match.group(1))
+            consoleDebugLog("Main page embedded preset data was unicode/parseJSON passed instead of normal")
+            if not match:
+                logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
+                consoleLog("###### UNABLE to extract pre-fetch data from main page, will try to proceed but likely have issues", logging.WARNING)
+            else:
+                preload_json_str = json.loads(match.group(1)) #yes we load it here first, it is a string passed to parseJson so this basically unescapes that string into preload_json_str which will then be loaded again later
         else:
             preload_json_str = match.group(1)
 
-        if match:
+        if preload_json_str is not None:
             preload_json = json.loads(preload_json_str)  # in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
             base_cache_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
-
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
-            DebugSaveFile("advanced_model_data_extracted.json", json.dumps(base_cache_node, indent="\t"))  # noqa: E701
+            DebugSaveFile("base_page_extracted_json.json", json.dumps(preload_json, indent="\t"))  # noqa: E701
+            DebugSaveFile("base_page_extracted_precache_advanced_model_data.json", json.dumps(base_cache_node, indent="\t"))  # noqa: E701
             DebugSaveFile("advanced_model_data_from_GetModelDetails.json", json.dumps(base_node, indent="\t"))  # noqa: E701
             DebugSaveFile("advanced_model_data_from_GetSnapshots.json", json.dumps(base_node_snapshots, indent="\t"))  # noqa: E701
 
         if not base_cache_node:
+            consoleLog("No embedded cache node falling back to Graph GetModelDetails query", logging.WARNING)
             base_cache_node = base_node
         if not base_node:
+            consoleLog("Not sure data query GetModelDetails worked we didn't get json back as expected, generally we don't need it for the dl run as we use embedded cache", logging.info)
             base_node = base_cache_node
         if "locations" not in base_node:  # the query doesnt get locations back but the cahce does have it
             base_node["locations"] = base_cache_node["locations"]
 
+        KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_GENERIC_KEY, KeyHandler.GetKeysFromStr(base_cache_node["assets"]["textures"][0]["urlTemplate"])[0] )
         toDownload: list[AsyncDownloadItem] = []
         consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tileset indexes: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
         #now: getmodeldetails: data.model.assets.meshes
-        for mesh in base_node["assets"]["meshes"]:
-            toDownload.append(AsyncDownloadItem("ADV_MODEL_MESH", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:]))  # not expecting the non 50k one to work but mgiht as well try
+        # Note if this is actually base_node the damn key won't work, only prefetch one seems to work
+        for mesh in base_cache_node["assets"]["meshes"]: #generally there is 50k and 500k but 500k we dont seem to have access to
+            damAccessKey=KeyHandler.GetKeysFromStr(mesh["url"])[0]
+            if mesh["resolution"] == "50k":
+                KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_DAM_50K,damAccessKey)
+            toDownload.append(AsyncDownloadItem("ADV_UUID_DAM", "50k" not in mesh["url"], mesh["url"], urlparse(mesh["url"]).path[1:],forceAccessKey=KeyHandler.LeaveKeyAlone))  # not expecting the non 50k one to work but mgiht as well try
+
+
+        # the photos and skyboxes similar urls (including working keys) can be found on the api/v1/player/models/ID/index.html file but note the V1 versions .url is not with the access key but .src is
 
         # now: instead from the snapshots graph data: data.model.assets.photos
         for photo in base_node_snapshots["assets"]["photos"]:
-            toDownload.append(AsyncDownloadItem("ADV_MODEL_IMAGES", True, photo["presentationUrl"], urlparse(photo["presentationUrl"]).path[1:]))
+            imageUrl=photo["url"] #this should be uncropped and unscaled original
+            if not imageUrl:
+                imageUrl=photo["presentationUrl"] #fallback not sure we every need this
+            toDownload.append(AsyncDownloadItem("ADV_MODEL_IMAGES", True, imageUrl, urlparse(imageUrl).path[1:],forceAccessKey=KeyHandler.LeaveKeyAlone))
 
         # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
         # now: getsweeps graph data: data.model.locations
@@ -896,21 +917,22 @@ async def AdvancedAssetDownload(base_page_text: str):
                 try:
                     for face in range(6):
                         skyboxUrlTemplate = skybox["urlTemplate"].replace("<face>", f"{face}")
-                        toDownload.append(AsyncDownloadItem("ADV_SKYBOX", False, skyboxUrlTemplate, urlparse(skyboxUrlTemplate).path[1:]))
+                        toDownload.append(AsyncDownloadItem("ADV_SKYBOX", False, skyboxUrlTemplate, urlparse(skyboxUrlTemplate).path[1:],forceAccessKey=KeyHandler.LeaveKeyAlone))
                 except:
                     pass
 
         consoleLog("Going to download tileset 3d asset models")
         # Download Tilesets
         #now: getmodeldetails: data.model.assets.tilesets
-        for tileset in base_node["assets"]["tilesets"]:  # normally just one tileset
+        for tileset in base_cache_node["assets"]["tilesets"]:  # normally just one tileset
             tilesetUrl = tileset["url"]
+            tilesetDepth = int(tileset["tilesetDepth"])
             tilesetUrlTemplate: str = tileset["urlTemplate"]
             if "<file>" not in tilesetUrlTemplate:  # the graph details does have it but the cached data does not
                 tilesetUrlTemplate = tilesetUrlTemplate.replace("?", "<file>?")
             tilesetBaseFile = urlparse(tilesetUrl).path[1:]
             try:
-                tileSetBytes = await downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile, isBinary=True)
+                tileSetBytes = await downloadFileAndGetText("ADV_TILESET", False, tilesetUrl, tilesetBaseFile, isBinary=True, force_key=KeyHandler.LeaveKeyAlone)
                 tileSetText = tileSetBytes.decode("utf-8", "ignore")
                 # tileSetText = validUntilFix(tileSetText)
                 # with open(getModifiedName(tilesetBaseFile), "w", encoding="UTF-8") as f:
@@ -923,7 +945,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                 for uri in tqdm(uris):
                     url = tilesetUrlTemplate.replace("<file>", uri)
                     try:
-                        chunkBytes = await downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], isBinary=True)
+                        chunkBytes = await downloadFileAndGetText("ADV_TILESET_GLB", False, url, urlparse(url).path[1:], isBinary=True, force_key=KeyHandler.LeaveKeyAlone)
                         chunkText = chunkBytes.decode("utf-8", "ignore")
                         chunks = re.findall(r"(lod[0-9]_[a-zA-Z0-9-_]+\.(jpg|ktx2))", chunkText)
                         # print("Found chunks: ",chunks)
@@ -931,23 +953,23 @@ async def AdvancedAssetDownload(base_page_text: str):
                         for ktx2 in chunks:
                             chunkUri = f"{uri[:2]}{ktx2[0]}"
                             chunkUrl = tilesetUrlTemplate.replace("<file>", chunkUri)
-                            toDownload.append(AsyncDownloadItem("ADV_TILESET_TEXTURE", False, chunkUrl, urlparse(chunkUrl).path[1:]))
+                            toDownload.append(AsyncDownloadItem("ADV_TILESET_TEXTURE", False, chunkUrl, urlparse(chunkUrl).path[1:], forceAccessKey=KeyHandler.LeaveKeyAlone))
 
                     except:
                         raise
             except:
                 raise
 
-            for file in range(6):
+            for file in range(tilesetDepth+1):
                 try:
                     tileseUrlTemplate = tilesetUrlTemplate.replace("<file>", f"{file}.json")
-                    getFileText = await downloadFileAndGetText("ADV_TILESET_JSON", False, tileseUrlTemplate, urlparse(tileseUrlTemplate).path[1:])
+                    getFileText = await downloadFileAndGetText("ADV_TILESET_JSON", False, tileseUrlTemplate, urlparse(tileseUrlTemplate).path[1:], force_key=KeyHandler.LeaveKeyAlone)
                     fileUris = re.findall(r'"uri":"(.*?)"', getFileText)
                     fileUris.sort()
                     for fileuri in fileUris:
                         fileUrl = tilesetUrlTemplate.replace("<file>", fileuri)
                         try:
-                            toDownload.append(AsyncDownloadItem("ADV_TILESET_EXTRACT", False, fileUrl, urlparse(fileUrl).path[1:]))
+                            toDownload.append(AsyncDownloadItem("ADV_TILESET_EXTRACT", False, fileUrl, urlparse(fileUrl).path[1:], forceAccessKey=KeyHandler.LeaveKeyAlone))
                         except:
                             pass
 
@@ -962,6 +984,11 @@ async def AdvancedAssetDownload(base_page_text: str):
                     crop_to_do = []
                     if texture["quality"] == "high":
                         crop_to_do = ADV_CROP_FETCH
+                    
+                    try: #try our full texture first so we can bail out before trying each and every crop
+                        await downloadFile("ADV_TEXTURE_FULL", True, full_text_url, urlparse(full_text_url).path[1:])
+                    except:
+                        break
                     for crop in crop_to_do:
                         for x in list(drange(0, 1, decimal.Decimal(crop["increment"]))):
                             for y in list(drange(0, 1, decimal.Decimal(crop["increment"]))):
@@ -974,10 +1001,7 @@ async def AdvancedAssetDownload(base_page_text: str):
                                 complete_add = f'{crop["start"]}x{xs},y{ys}'
                                 complete_add_file = complete_add.replace("&", "_")
                                 toDownload.append(AsyncDownloadItem("ADV_TEXTURE_CROPPED", False, full_text_url + "&" + complete_add, urlparse(full_text_url).path[1:] + complete_add_file + ".jpg"))  # failures here ok we dont know all teh crops that exist, so we can still use the array downloader
-                    try:
-                        await downloadFile("ADV_TEXTURE_FULL", True, full_text_url, urlparse(full_text_url).path[1:])
-                    except:
-                        break
+                    
             except Exception:
                 logging.exception("Adv download texture have exception")
         consoleLog("Downloading textures and previews for tileset 3d models")
@@ -988,7 +1012,7 @@ async def AdvancedAssetDownload(base_page_text: str):
             raise
         else:
             pass
-    EnableDisableKeyReplacement(True)
+    # KeyHandler.EnableDisableKeyReplacement(True)
 
 
 async def initiateDownload(url):
@@ -1204,8 +1228,118 @@ def RegisterWindowsBrowsers():
             name = name.replace("Google ", "").replace("Mozilla ", "").replace("Microsoft ", "")  # emulate stock names
             webbrowser.register(name, None, webbrowser.GenericBrowser(cmd))
 
+AccessKeyType = Enum("AccessKeyType", ["MAIN_PAGE_GENERIC_KEY","MAIN_PAGE_DAM_50K","FILES2_BASE_URL_KEY","FILES3_TEMPLATE_KEY"])
+class KeyHandler:
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS","QUIET", "HELP", "ADV_HELP", "AUTO_SERVE"])
+    # not actually used currently 
+    # KEY_REPLACE_ACTIVE : ClassVar[bool] = True #no longer toggling this
+    
+    #const value meaning we shouldn't be changing the key on a url
+    LeaveKeyAlone : ClassVar[str] = "LEAVE"     
+    # Primary key we use normally MAIN_PAGE_GENERIC_KEY but if adv download is off fallback to FILES3_TEMPLATE_KEY which generally works but can have a shorter lifetime
+    PrimaryKey : ClassVar[str] = None
+
+    RE_ACCESS_KEY_EXTRACT : ClassVar[re.Pattern] = re.compile(r"2\-[0-9a-z]{40}\-17[0-9]{8}-[0-9]") #important to remain case sensitive
+    # This is every key we have run into not generally used for anyhting but brute force and explaining where keys come from
+    KNOWN_ACCESS_KEYS : ClassVar[dict[str,str]] = {} #key to source(s) of key
+    # most resources work with our main page generic key but the dam file uses the dam key
+    ACCESS_KEYS_BY_TYPE : ClassVar[dict[AccessKeyType,str]] = {}
+   
+    @staticmethod
+    def GetAllKeys() -> list[str]:
+        return list(KeyHandler.KNOWN_ACCESS_KEYS.keys())
+
+    @staticmethod
+    def GetAccessKey(key_type : AccessKeyType):
+        return KeyHandler.ACCESS_KEYS_BY_TYPE[key_type]
+    
+    @staticmethod
+    def SetAccessKey(key_type : AccessKeyType, key : str):
+        if type(key) is not str or not key:
+            raise Exception(f"Call with invalid key for SetAccessKey {key_type} = {key}")
+        consoleDebugLog(f'SetAccessKey for {key_type} = {key}')
+        KeyHandler.ACCESS_KEYS_BY_TYPE[key_type] = key
+        if key_type == AccessKeyType.MAIN_PAGE_GENERIC_KEY:
+            KeyHandler.PrimaryKey = key
+        if KeyHandler.PrimaryKey is None and key_type == AccessKeyType.FILES3_TEMPLATE_KEY: #our former primary key
+            KeyHandler.PrimaryKey = key
+    
+    @staticmethod
+    def GetKeysFromStr(parseText) -> list[str]:
+        return KeyHandler.RE_ACCESS_KEY_EXTRACT.findall(parseText)
+
+    #fromWhat should not have any spaces
+    @staticmethod
+    def SaveKeysFromText(fromWhat, text):
+        foundKeys = KeyHandler.GetKeysFromStr(text)
+        textDescriptor = f' {fromWhat} '
+        for foundKey in foundKeys:
+            if foundKey in KeyHandler.KNOWN_ACCESS_KEYS:
+                if textDescriptor in KeyHandler.KNOWN_ACCESS_KEYS[foundKey]:
+                    continue
+            else:
+                KeyHandler.KNOWN_ACCESS_KEYS[foundKey] = ' '
+            KeyHandler.KNOWN_ACCESS_KEYS[foundKey] += fromWhat + ' '
+        #2-3394fea8af5bf96264fd16b21267e779c6aaf4cb-1735546220-0
+        #all access keys right now start with a 2 a dash then a 40 char hash a dash then a timestamp starting with 17 (wont go to 18 until 2027) then a single digit, single digit at end maybe indicate purpose?
+
+    @staticmethod
+    def DumpKnownKeysToFile():
+        toSort=[]
+        for key in KeyHandler.KNOWN_ACCESS_KEYS:
+            keyDesc=KeyHandler.KNOWN_ACCESS_KEYS[key].strip()
+            outStr=f"T { key.split('-')[-1] }: {keyDesc} -- {key}"
+            toSort.append(outStr)
+        toSort.sort()
+        DebugSaveFile("keys.txt",'\n'.join(toSort))
+            
+    #print all keys that work for url
+    @staticmethod
+    async def PrintUrlKeys(url):
+        #turnKeyReplacementBackOn=False
+        workingKeys = ""
+        #if KeyHandler.KEY_REPLACE_ACTIVE:
+            #KeyHandler.EnableDisableKeyReplacement(False)
+            #turnKeyReplacementBackOn=True
+        # toDownload.append(AsyncDownloadItem(type, shouldExist, f"{base}{asset}", local_file))
+        consoleLog("Finding url keys....")
+        toDownload: list[AsyncDownloadItem] = []
+        async with aiofiles.tempfile.TemporaryDirectory() as tmp:
+            print(f"Directory is: {tmp}")
+            pathlib.Path(os.path.join(tmp, "test")).touch()
+            
+            for key in KeyHandler.KNOWN_ACCESS_KEYS:
+                toDownload.append(AsyncDownloadItem("FindUrlKey", False, KeyHandler.SetAccessKeyForUrl(url,key),os.path.join(tmp,"test_"+ key),forceAccessKey=key))
+            await AsyncArrayDownload(toDownload)
+            for _file in os.listdir(tmp):
+                if not _file.startswith("test_"):
+                    continue
+                file = _file[5:]
+                workingKeys+=f"\t{file}({KeyHandler.KNOWN_ACCESS_KEYS[file].strip()})\n"
+
+        #if turnKeyReplacementBackOn:
+            #EnableDisableKeyReplacement(True)
+        consoleLog(f'### FOR URL: {url} ACCESS KEYS THAT WORK:\n{workingKeys}')
+
+    @staticmethod
+    def SetAccessKeyForUrl(url,keyOverride=None,addIfMissing=False):
+        if keyOverride == KeyHandler.LeaveKeyAlone:
+            return url
+        match = KeyHandler.RE_ACCESS_KEY_EXTRACT.search(url)
+        key = KeyHandler.PrimaryKey
+        if keyOverride is not None:
+            key = keyOverride
+        if match is None:
+            if addIfMissing:
+                if "?" in url:
+                    return url + "&t="+key
+                else:
+                    return url + "?t="+key
+            return url
+        return url.replace(match.group(0), key)
+
+
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS","QUIET", "HELP", "ADV_HELP", "AUTO_SERVE","FIND_URL_KEY","REFRESH_KEY_FILES"])
 ArgAppliesTo = Enum("ArgAppliesTo", ["DOWNLOAD", "SERVING", "BOTH"])
 
 
@@ -1316,14 +1450,17 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, you must use the same option during the capture and serving", sys.platform == "win32")
     CLA.addCommandLineArg(CommandLineArg.ALIAS, "create an alias symlink for the download with this name, does not override any existing (can be used when serving)", "", itemValueHelpDisplay="name")
-    CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD, "downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts", True)
+    CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD, "downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts, now primary access keys come from it so generally required", True)
     CLA.addCommandLineArg(CommandLineArg.DEBUG, "debug mode enables select debug output to console or the debug/ folder mostly for developers", False, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.CONSOLE_LOG, "showing all log messages in the console rather than just the log file, very spammy", False, allow_saved=False)
 
     CLA.addCommandLineArg(CommandLineArg.DOWNLOAD, "Download items (without this it just does post download actions)", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.VERIFY_SSL, "SSL verification, mostly useful for proxy situations", True, allow_saved=False, hidden=True)
     CLA.addCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD, "Primary asset downloads (normally biggest part of the download)", True, hidden=True, allow_saved=False)
-    CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys", True, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS, "Always download/make graphql requests, a good idea as they have important keys, note if REFRESH_KEY_FILES is off it will still prevent graph files from downloading", 
+    True, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.FIND_URL_KEY, "A URL to try to find the access key for, makes a few minimal requests upfront to get needed keys", "","https://my.matterport.com/api/player/models/EGxFGTFyC9N/test.file", hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.REFRESH_KEY_FILES, "There are about a half dozen files always downloaded as they may contain access keys we need, this prevents these from downloading", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
 
     CLA.addCommandLineArg(CommandLineArg.QUIET, "Only show failure log message items when serving", False, applies_to=ArgAppliesTo.SERVING)
@@ -1367,7 +1504,7 @@ if __name__ == "__main__":
             CLA.parseArgs()
         except:
             pass
-    
+
     if len(sys.argv) == 2 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
         asyncio.run(initiateDownload(pageId))
 
@@ -1400,6 +1537,7 @@ if __name__ == "__main__":
             webbrowser.get(browserLaunch).open_new_tab(url)
         httpd.serve_forever()
     else:
+        consoleLog(sys_info())
         print("Usage:\n\tFirst download the digital twin: matterport-dl.py [url_or_page_id]\n\tThen launch the server 'matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080' and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
         print(CLA.getUsageStr())
         print("\tServing options:")

@@ -1,5 +1,7 @@
 # matterport-dl
-A tool to download/archive [Matterport](https://matterport.com) digital twin virtual tours.  Supports most matterport virtual tour links ( ie https://my.matterport.com/show/?m=roWLLMMmPL8 ). This project is not in any way associated with or supported by Matterport Inc in any way all relevant trademarks and rights are reserve Matterport Inc.
+A tool to download/archive [Matterport](https://matterport.com) digital twin virtual tours.  Supports most matterport virtual tour links ( ie https://my.matterport.com/show/?m=roWLLMMmPL8 ). This project is not in any way associated with or supported by Matterport Inc in any way all relevant trademarks and rights are reserve Matterport Inc. 
+
+Currently matterport-dl.py is primarily maintained by [@mitchcapper](https://github.com/mitchcapper).
 
 See [CHANGELOG.md](CHANGELOG.md) for changes and [DEVELOPERS.md](DEVELOPERS.md) for some developer notes.
 
@@ -28,7 +30,6 @@ Any option below can have a no prefix added (or removed if already has) to inver
 
 ### Download Run Options
 - `--base-folder` dir -- folder to store downloaded models in (or serve from) currently: ./downloads
-- `--brute-js`  -- downloading the range of matterports many JS files numbered 1->999.js, through trying them all rather than just the ones we know
 - `--proxy` 127.0.0.1:8866 -- using web proxy specified for all requests
 - `--no-tilde`  -- disables: allowing tildes on file paths, likely must be disabled for Apple/Linux, should be enabled during capture run
 - `--alias` name -- create an alias symlink for the download with this name, does not override any existing (can be used when serving)

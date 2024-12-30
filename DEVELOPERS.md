@@ -17,6 +17,6 @@ socat TCP4-LISTEN:9000,fork,reuseaddr TCP4:127.0.0.1:8080
 
 then modify the matterport-dl.py to give the wrong port to JSNetProxy for the redirect
 
-While we can likely enable plguins not originally enabled certain things are not possible if there is not the data.  For example floorplan sq/ft etc only exist if the original model collected the data it requires to compute that.
+While we can likely enable plugins not originally enabled certain things are not possible if there is not the data.  For example floorplan sq/ft etc only exist if the original model collected the data it requires to compute that.
 
 The CLI arg handling is a bit odd, as everything can have negative forms but sometimes the negative is the default the usage it shows is based on the opposite of the current value.   IE as we default to doing advanced download now there it shows the CLA as `--no-advanced-download` rather than `--advanced-download` and then somehow indicating it is on by default. This becomes a bit confusing if running an existing model.  If a model is passed and it has been run before we try to first load the CLAs that were loaded on the initial run before applying any new CLAs.  So if you run `matterport-dl.py --help` it will show `--no-tilde` as the option.  If you run `matterport-dl.py ASi1239a --help` and you already ran `ASi1239a` as a download with `--no-tilde` then `--help` will show `--tilde` as that is the negative.
