@@ -71,7 +71,7 @@ body:
 - type: textarea
   attributes:
     label: Workarounds
-    description: If you already tried certain things or found a temporary/partial solution please let us know.  Try using things like `--brute-js` CLI to download JS files we may not expect/find or `--no-advanced-download` to see if you can get even a partial download.
+    description: If you already tried certain things or found a temporary/partial solution please let us know.  You can try `--no-advanced-download` to see if you can get even a partial download.
     placeholder: I tried X,Y,Z and had success with Y but Z caused applesauce.
   validations:
     required: false
