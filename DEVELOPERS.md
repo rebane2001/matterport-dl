@@ -10,7 +10,7 @@ Recently we added a new javascript proxy class [JSNetProxy.js] it allows us to a
 
 
 Some failures are to be expected but a normal run looks something like:
-Done, Total potential Request: 76131 Already downloaded Skipped: 20 (0%) Success: 74988 (98%) Failed403: 1119 (1%) Failed404: 24 (0%) FailedUnknown: 0 (0%)
+Done, Total fetches: 33770 Skipped: 39 (0%) actual Request: 33731 (100%) Success: 33717 (100%) Failed403: 5 (0%) Failed404: 3 (0%) FailedUnknown: 0 (0%)
 
 To ensure the proxy script is catching everything (and something isn't just using the hosted url) you can use socat to have a second part direct to the local server:
 socat TCP4-LISTEN:9000,fork,reuseaddr TCP4:127.0.0.1:8080

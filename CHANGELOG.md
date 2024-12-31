@@ -1,4 +1,7 @@
 ## 2024-12-30
+- Basic defurnished model support, nearly all excess 403/404 requests eliminated
+
+## 2024-12-25
 - Major changes to frontend from matterport including stricter access key requirements, access keys for javascript files, and multiple other changes.  Major restructuring of matterport-dl.py to avoid brute force methods and properly harvest nearly all resource data we need to download.  No longer using every access key we know if failure, but instead using the correct access key per resource.  This should speed up runs a good bit by cutting the # of requests down.
 
 ## 2024-09-14

@@ -15,6 +15,13 @@ It supports offline viewing of virtual tours and most tour features including:
 - Floorplan view with room labels and dimensions
 - Skyboxes for outside environments
 - Most other Matterport plugins
+- Partial AI defurnished model support (must caller matterport-dl.py with the ID for the defurnished model cannot just auto swap *yet*)
+
+# Todo / Up for Grabs
+While it is largely feature complete in its ability to preserve an entire digital twin there are a few things on the todo list. See [TODO.md](TODO.md) for details but in short:
+- Switch sweeps (tiles) downloading from v1 API to use the GetShowcaseSweeps graph request we already make
+- Download defurnished files next to normal model files rather than requiring separate download run. This will allow defurnished toggling.
+- Static (non matterport-dl.py server hosting)
 
 # Usage
 
