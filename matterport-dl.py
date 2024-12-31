@@ -51,7 +51,9 @@ MAIN_SHOWCASE_FILENAME = "" #the filename for the main showcase runtime
 dirsMadeCache: dict[str, bool] = {}
 THIS_MODEL_ROOT_DIR : str
 SERVED_BASE_URL : str #url we are serving from ie http://127.0.0.1:8080
-
+MODEL_IS_DEFURNISHED = False #defurnished models can be accessed directly but have some quarks eventually will add to initial dl
+BASE_MODEL_ID="" #normally this is the model id we are downloading unless defurnished
+SWEEP_DO_4K = True #assume 4k  by default
 #if no git revision fall back to our sha
 def self_sha():
     with open(pathlib.Path(__file__).resolve(), "rb") as f:
@@ -146,9 +148,12 @@ def getModifiedName(filename: str):
 
 def getVariants():
     variants = []
+    global SWEEP_DO_4K
     # to be smart we should be using the GetShowcaseSweeps file and data.model.locations[4].pano.resolutions  to determine if we should be trying 2k or 4k
-    depths = ["512", "1k", "2k", "4k"]
-    for depth in range(4):
+    depths = ["512", "1k", "2k"]
+    if SWEEP_DO_4K:
+        depths.append("4K")
+    for depth in range(len(depths)):
         z = depths[depth]
         for x in range(2**depth):
             for y in range(2**depth):
@@ -174,13 +179,17 @@ async def downloadDAM(accessurl, uuid):
         pass  # very lazy and bad way to only download required files
 
 
-async def downloadSweeps(accessurl, sweeps):
+async def downloadSweeps(accessurl : str, sweeps : list[str]):
+    global MODEL_IS_DEFURNISHED
     # the sweep query at least has data.model.defurnishViews[0].model.id for others
+    forceKey : str = None
+    if MODEL_IS_DEFURNISHED:
+        forceKey=KeyHandler.GetAccessKey(AccessKeyType.SWEEP_KEY)
     toDownload: list[AsyncDownloadItem] = []
     for sweep in sweeps:
         sweep = sweep.replace("-", "")
         for variant in getVariants(): #so if we checked for 404s we could do this more effeciently but serializing it to do that would be slower than just a bunch of 404s
-            toDownload.append(AsyncDownloadItem("MODEL_SWEEPS", True, accessurl.format(filename=f"tiles/{sweep}/{variant}") + "&imageopt=1", f"tiles/{sweep}/{variant}"))
+            toDownload.append(AsyncDownloadItem("MODEL_SWEEPS", True, accessurl.format(filename=f"tiles/{sweep}/{variant}") + "&imageopt=1", f"tiles/{sweep}/{variant}",forceAccessKey=forceKey))
     await AsyncArrayDownload(toDownload)
 
 
@@ -427,7 +436,9 @@ def extractJSDict(forWhat : str, str : str):
     pairs=str.split(",")
     for kvp in pairs:
         arr=kvp.replace("\"","").split(":")
-        ret[arr[0]] = arr[1]
+        key=arr[0]
+        key=int(float(key)) #keys can be in scientific notation
+        ret[f'{key}'] = arr[1]
     return ret
 
 
@@ -441,9 +452,11 @@ async def downloadAssets(base,base_page_text):
     font_files = ["ibm-plex-sans-100", "ibm-plex-sans-100italic", "ibm-plex-sans-200", "ibm-plex-sans-200italic", "ibm-plex-sans-300", "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic", "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic", "roboto-300", "roboto-300italic", "roboto-500", "roboto-500italic", "roboto-700", "roboto-700italic", "roboto-900", "roboto-900italic", "roboto-italic", "roboto-regular"]
 
     # extension assumed to be .png unless it is .svg or .jpg, for anything else place it in assets
-    image_files = ["360_placement_pin_mask", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior", "exterior_hover", "firefox", "headset-cardboard", "headset-quest", "interior", "interior_hover", "matterport-logo-light.svg", "matterport-logo.svg", "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag", "nav_help_gesture_drag_two_finger", "nav_help_gesture_pinch", "nav_help_gesture_position", "nav_help_gesture_position_two_finger", "nav_help_gesture_tap", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down", "nav_help_mouse_click", "nav_help_mouse_ctrl_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left", "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "NoteIcon", "pinAnchor", "puck_256_red", "roboto-700-42_0", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "tagbg", "tagmask", "vert_arrows", "headset-quest-2", "pinIconDefault", "tagColor", "matterport-app-icon.svg"]
+    image_files = ["360_placement_pin_mask", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior", "exterior_hover", "firefox", "interior", "interior_hover", "matterport-logo-light.svg", "matterport-logo.svg", "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag", "nav_help_gesture_drag_two_finger", "nav_help_gesture_pinch", "nav_help_gesture_position", "nav_help_gesture_position_two_finger", "nav_help_gesture_tap", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down", "nav_help_mouse_click", "nav_help_mouse_ctrl_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left", "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "pinAnchor", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256",  "vert_arrows", "headset-quest-2",  "tagColor", "matterport-app-icon.svg"]
 
-    assets = ["js/browser-check.js", "css/showcase.css","css/packages-nova-ui.css", "css/scene.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png", "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/split.css", "css/late.css", "matterport-logo.svg"]
+    assets = ["js/browser-check.js", "css/showcase.css","css/packages-nova-ui.css", "css/scene.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png", "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/late.css"]
+
+    # following seem no more: "css/split.css", "headset-cardboard", "headset-quest", "NoteIcon",  "puck_256_red", "tagbg", "tagmask", "roboto-700-42_0", "pinIconDefault",
 
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
     base_page_js_loads = re.findall(r"script src=[\"']([^\"']+[.]js)[\"']",base_page_text,flags=re.IGNORECASE)
@@ -606,7 +619,8 @@ async def AsyncArrayDownload(assets: list[AsyncDownloadItem]):
                 await asyncio.sleep(0.01)
         logging.debug(f"{PROGRESS}")
 
-async def downloadInfo(pageid):
+#can get called twice for defurnished with the second call being the base model id
+async def downloadFixedAPIInfo(pageid):
     global BASE_MATTERPORT_DOMAIN
     assets = [f"api/v1/jsonstore/model/highlights/{pageid}", f"api/v1/jsonstore/model/Labels/{pageid}", f"api/v1/jsonstore/model/mattertags/{pageid}", f"api/v1/jsonstore/model/measurements/{pageid}", f"api/v1/player/models/{pageid}/thumb?width=1707&dpr=1.5&disable=upscale", f"api/v2/models/{pageid}/sweeps", "api/v2/users/current", f"api/player/models/{pageid}/files", f"api/v1/jsonstore/model/trims/{pageid}", "api/v1/plugins?manifest=true", f"api/v1/jsonstore/model/plugins/{pageid}"]
     toDownload: list[AsyncDownloadItem] = []
@@ -617,13 +631,19 @@ async def downloadInfo(pageid):
         toDownload.append(AsyncDownloadItem("MODEL_INFO", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/{asset}", local_file))
     await AsyncArrayDownload(toDownload)
 
-    pageJsonFile=f"api/v1/player/models/{pageid}/"
-    modelJson = await downloadFileAndGetText("MODEL_INFO", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/{pageJsonFile}", f"{pageJsonFile}/index.html",always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
-    KeyHandler.SaveKeysFromText("ApiV1PlayerModelsJson",modelJson)
+async def downloadInfo(pageid):
+    global BASE_MATTERPORT_DOMAIN, MODEL_IS_DEFURNISHED, BASE_MODEL_ID
+    await downloadFixedAPIInfo(pageid)
 
     makeDirs("api/mp/models")
     with open("api/mp/models/graph", "w", encoding="UTF-8") as f:
         f.write('{"data": "empty"}')
+    if MODEL_IS_DEFURNISHED:
+        return
+
+    pageJsonFile=f"api/v1/player/models/{pageid}/"
+    modelJson = await downloadFileAndGetText("MODEL_INFO", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/{pageJsonFile}", f"{pageJsonFile}/index.html",always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    KeyHandler.SaveKeysFromText("ApiV1PlayerModelsJson",modelJson)    
     for i in range(1, 4):  # file to url mapping
         fileText = await downloadFileAndGetText("FILE_TO_URL_JSON", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type={i}", f"api/player/models/{pageid}/files_type{i}",always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES)) #may have keys
         KeyHandler.SaveKeysFromText(f'FilesType{i}',fileText) #used to be more elegant but now we can just gobble all the keys
@@ -650,22 +670,40 @@ async def downloadPics(pageid):
 
 
 async def downloadMainAssets(pageid, accessurl):
-    global THIS_MODEL_ROOT_DIR
-    #this uses the old model json but we dont need it, the dam should have already been downloaded and the sweeps we can use getShowcaseSweeeps for
-    with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
-        modeldata = json.load(f)
-    match = re.search(r"models/([a-z0-9-_./~]*)/\{filename\}", accessurl)
-    if match is None:
-        raise Exception(f"Unable to extract access model id from url: {accessurl}")
-    accessid = match.group(1)
-    basePath = f"models/{accessid}"
-    if not CLA.getCommandLineArg(CommandLineArg.TILDE):
-        basePath = basePath.replace("~", "_")
-    makeDirs(basePath)
-    os.chdir(basePath)
-    await downloadDAM(accessurl, modeldata["job"]["uuid"])
+    global THIS_MODEL_ROOT_DIR, MODEL_IS_DEFURNISHED
+    sweepUUIDs : list[str] = []
+    if MODEL_IS_DEFURNISHED: #technically we could use this for all, and this data is in the prefetch embedded as well
+        with open("api/mp/models/graph_GetShowcaseSweeps.json", "r", encoding="UTF-8") as f:
+            graphModelSweepsJson = json.loads(f.read())
+            base_node = graphModelSweepsJson["data"]["model"]
+            for location in base_node["locations"]:
+                sweepUUIDs.append(location["pano"]["sweepUuid"])
+            accessurl=base_node["locations"][0]["pano"]["skyboxes"][0]["tileUrlTemplate"]
+            tildeStart=accessurl.find("~/")
+            accessurl=accessurl[:tildeStart + 2]
+            sweepDir=urlparse(accessurl).path[1:]
+            if not CLA.getCommandLineArg(CommandLineArg.TILDE):
+                sweepDir = sweepDir.replace("~", "_")
+            accessurl=accessurl + "{filename}?t=2-796d5d010d7183bce7f0999701973d8b05b2df8f-1735673498-0" #access key here doesnt matter as we will be replacing it
+            makeDirs(sweepDir)
+            os.chdir(sweepDir)
+    else:
+        #this uses the old model json but we dont need it, the dam should have already been downloaded and the sweeps we can use getShowcaseSweeeps for
+        with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
+            modeldata = json.load(f)
+        match = re.search(r"models/([a-z0-9-_./~]*)/\{filename\}", accessurl)
+        if match is None:
+            raise Exception(f"Unable to extract access model id from url: {accessurl}")
+        accessid = match.group(1)
+        basePath = f"models/{accessid}"
+        if not CLA.getCommandLineArg(CommandLineArg.TILDE):
+            basePath = basePath.replace("~", "_")
+        makeDirs(basePath)
+        os.chdir(basePath)
+        await downloadDAM(accessurl, modeldata["job"]["uuid"])
+        sweepUUIDs = modeldata["sweeps"]
     #now: getShowcaseSweeps then need to iterate the locatiosn and get the uuid data.model.locations[0].pano.sweepUuid  this would resolve many of the 404s we will get by just bruteforcing  each location has its only max res (2k 4k etc) 
-    await downloadSweeps(accessurl, modeldata["sweeps"]) #sweeps are generally the biggest thing minus a few modles that have massive 3d detail items
+    await downloadSweeps(accessurl, sweepUUIDs) #sweeps are generally the biggest thing minus a few modles that have massive 3d detail items
     os.chdir(THIS_MODEL_ROOT_DIR)
 
 # Patch showcase.js to fix expiration issue
@@ -716,8 +754,9 @@ def RemoteDomainsReplace(str: str):
 
 
 async def downloadCapture(pageid):
-    global PROGRESS, RUN_ARGS_CONFIG_NAME, BASE_MATTERPORT_DOMAIN, CHINA_MATTERPORT_DOMAIN, THIS_MODEL_ROOT_DIR
+    global PROGRESS, RUN_ARGS_CONFIG_NAME, BASE_MATTERPORT_DOMAIN, CHINA_MATTERPORT_DOMAIN, THIS_MODEL_ROOT_DIR, MODEL_IS_DEFURNISHED,BASE_MODEL_ID
     makeDirs(pageid)
+    BASE_MODEL_ID=pageid
     alias = CLA.getCommandLineArg(CommandLineArg.ALIAS)
     if alias and not os.path.exists(alias):
         os.symlink(pageid, alias)
@@ -765,17 +804,22 @@ async def downloadCapture(pageid):
     basisTranscoderWasm = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.wasm")
     basisTranscoderJs = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.js")
     webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs]
-    match = re.search(r'"(https://cdn-\d*\.matterport(?:vr)?\.(?:com|cn)/models/[a-z0-9\-_/.]*/)([{}0-9a-z_/<>.]+)(\?t=.*?)"', base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape"))  # some non-english matterport pages have unicode escapes for even the generic url chars
+    base_page_deunicode = base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape") # some non-english matterport pages have unicode escapes for even the generic url chars
+    if CLA.getCommandLineArg(CommandLineArg.DEBUG):
+            DebugSaveFile("base_page_deunicode.html", base_page_deunicode)  # noqa: E701
+    match = re.search(r'"(?P<baseurl>https://cdn-\d*\.matterport(?:vr)?\.(?:com|cn)/models/[a-z0-9\-_/.]*/)(?:[{}0-9a-z_/<>.~]+)(?P<defaultAccessKey>\?t=.*?)"', base_page_deunicode)  #the ~/ optional is mostly for defurnished secondary models
 #matterportvr.cn
     if match:
-        accessurl = f"{match.group(1)}~/{{filename}}{match.group(3)}"
+        groupDict = match.groupdict()
+        accessurl = f"{groupDict["baseurl"]}~/{{filename}}{groupDict["defaultAccessKey"]}"
 
     else:
         raise Exception(f"Can't find urls, try the main page: {url} in a browser to make sure it loads the model correctly")
 
-    # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
-    file_type_content = await GetTextOnlyRequest("MAIN", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type=3")  # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
-    KeyHandler.SetAccessKey( AccessKeyType.FILES3_TEMPLATE_KEY, KeyHandler.GetKeysFromStr(file_type_content)[0] )
+    if not MODEL_IS_DEFURNISHED:
+        # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
+        file_type_content = await GetTextOnlyRequest("MAIN", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/player/models/{pageid}/files?type=3")  # get a valid access key, there are a few but this is a common client used one, this also makes sure it is fresh
+        KeyHandler.SetAccessKey( AccessKeyType.FILES3_TEMPLATE_KEY, KeyHandler.GetKeysFromStr(file_type_content)[0] )
 
     consoleLog("Downloading graph model data...")  # need the details one for advanced download
     await downloadGraphModels(pageid)
@@ -818,8 +862,9 @@ async def downloadCapture(pageid):
     patchShowcase()
     consoleLog("Downloading plugins...")
     await downloadPlugins(pageid)
-    consoleLog("Downloading images...")
-    await downloadPics(pageid)
+    if not MODEL_IS_DEFURNISHED:
+        consoleLog("Downloading images...")
+        await downloadPics(pageid)
     open("api/v1/event", "a").close()
     if CLA.getCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD):
         consoleLog("Downloading primary model assets...")
@@ -830,6 +875,7 @@ async def downloadCapture(pageid):
 
 
 async def AdvancedAssetDownload(base_page_text: str):
+    global MODEL_IS_DEFURNISHED, BASE_MODEL_ID, SWEEP_DO_4K
     ADV_CROP_FETCH = [{"start": "width=512&crop=1024,1024,", "increment": "0.5"}, {"start": "crop=512,512,", "increment": "0.25"}]
     consoleLog("Doing advanced download of dollhouse/floorplan data...")
     # Started to parse the modeldata further.  As it is error prone tried to try catch silently for failures. There is more data here we could use for example:
@@ -888,7 +934,18 @@ async def AdvancedAssetDownload(base_page_text: str):
         if "locations" not in base_node:  # the query doesnt get locations back but the cahce does have it
             base_node["locations"] = base_cache_node["locations"]
 
-        KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_GENERIC_KEY, KeyHandler.GetKeysFromStr(base_cache_node["assets"]["textures"][0]["urlTemplate"])[0] )
+        if MODEL_IS_DEFURNISHED:
+            KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_GENERIC_KEY,"INVALIDGENERICACCESSKEY")
+            KeyHandler.SetAccessKey(AccessKeyType.FILES2_BASE_URL_KEY,"INVALIDGENERICACCESSKEYFILE2")
+            KeyHandler.SetAccessKey(AccessKeyType.FILES3_TEMPLATE_KEY,"INVALIDGENERICACCESSKEYFILES3")
+            KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_DAM_50K,"INVALIDGENERICACCESSKEYDAM")
+            BASE_MODEL_ID=base_cache_node["baseView"]["model"]["id"]
+            consoleLog("Downloading fix api info for  base model...")
+            await downloadFixedAPIInfo(BASE_MODEL_ID)
+            KeyHandler.SetAccessKey(AccessKeyType.SWEEP_KEY,KeyHandler.GetKeysFromStr(base_cache_node["locations"][0]["pano"]["skyboxes"][0]["tileUrlTemplate"])[0])
+
+        else:
+            KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_GENERIC_KEY, KeyHandler.GetKeysFromStr(base_cache_node["assets"]["textures"][0]["urlTemplate"])[0] )
         toDownload: list[AsyncDownloadItem] = []
         consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots["assets"]["photos"])} meshes: {len(base_node["assets"]["meshes"])}, locations: {len(base_node["locations"])}, tileset indexes: {len(base_node["assets"]["tilesets"])}, textures: {len(base_node["assets"]["textures"])}, ")
 
@@ -912,15 +969,26 @@ async def AdvancedAssetDownload(base_page_text: str):
 
         # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
         # now: getsweeps graph data: data.model.locations
+        do4K=len(base_node["locations"]) == 0 #by default only do 4k if we have no locations data to check
         for location in base_node["locations"]:
+            if "4k" in location["pano"]["resolutions"]:
+                do4K=True
+            elif do4K:
+                if CLA.getCommandLineArg(CommandLineArg.DEBUG):
+                    raise Exception("Found a non 4k pano even though others are 4k, dynamic resolution detection needed")
             for skybox in location["pano"]["skyboxes"]:
+                if skybox["status"] == "locked": #not sure why some models have 4k but then locked skyboxes at that resolution.  The normal skybox key also with 403  trying to access the 4ks.  We can use the main key to access the urls but it just gives a 404
+                    if skybox["resolution"] == "4k":
+                        do4K=False
+                    elif CLA.getCommandLineArg(CommandLineArg.DEBUG):
+                        raise Exception("Found non 4k resolution lcoekd for a skybox? Curious if actual download for it would 403...")
                 try:
                     for face in range(6):
                         skyboxUrlTemplate = skybox["urlTemplate"].replace("<face>", f"{face}")
                         toDownload.append(AsyncDownloadItem("ADV_SKYBOX", False, skyboxUrlTemplate, urlparse(skyboxUrlTemplate).path[1:],forceAccessKey=KeyHandler.LeaveKeyAlone))
                 except:
                     pass
-
+        SWEEP_DO_4K=do4K
         consoleLog("Going to download tileset 3d asset models")
         # Download Tilesets
         #now: getmodeldetails: data.model.assets.tilesets
@@ -1025,8 +1093,10 @@ async def initiateDownload(url):
 
 
 def getPageId(url):
+    global MODEL_IS_DEFURNISHED
     id = url.split("m=")[-1].split("&")[0]
-    if not id.isalnum() or len(id) < 5 or len(id) > 15:
+    MODEL_IS_DEFURNISHED = len(id) == 25
+    if not id.isalnum() or ( (len(id) < 5 or len(id) > 15) and not MODEL_IS_DEFURNISHED ): #25 can be used for defurnished models
         raise Exception(f"Likely invalid model id extracted: {id} from your input of: {url} you should pass the ID itself (ie EGxFGTFyC9N) or the url: form like: https://my.matterport.com/show/?m=EGxFGTFyC9N")
     return id
 
@@ -1187,6 +1257,13 @@ GRAPH_DATA_REQ = {
     "GetRoomBounds":"?operationName=GetRoomBounds&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2214f99a0c44512f435987f1305eacdaea7ca600f2b5e9022499087188e63915aa%22%7D%7D",
     "GetShowcaseSweeps":"?operationName=GetShowcaseSweeps&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%220faff869a8ae9385fe262d18ea1f731bbbeb3d618c036e60a8d0d630ae3526a5%22%7D%7D",
     "GetSnapshots":"?operationName=GetSnapshots&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22510bd772b16a48aa4ea74aa290373225eeb306b3162fa34c75d6f643daf3f22b%22%7D%7D",
+
+    # the following normally only seen on defurnished views directly
+    "GetRoomClassifications":"?operationName=GetRoomClassifications&variables=%7B%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22fdfefe83b3f6c491b0b76576b34366278274c92b36324bef4dd299d39fb986f3%22%7D%7D", #yes get room classificaitons does not take a model id 
+    "GetRooms":"?operationName=GetRooms&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%223743bbb80ad617297c8e8c943499144b8ff20840a5c1fd48e5d3d131d915ed3a%22%7D%7D", 
+    "GetFloors":"?operationName=GetFloors&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%225df6b8c235ad84bba1032135922354e8850320ce8780315993722778d9835f15%22%7D%7D",
+    "GetModelOptions":"?operationName=GetModelOptions&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2248765f4d53c1700521382c03034c1b67e63b9bdc6cccdc6c4e853620cd9c74c7%22%7D%7D",
+
 }
 OUR_SESSION: requests.AsyncSession
 MAX_TASKS_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -1228,7 +1305,7 @@ def RegisterWindowsBrowsers():
             name = name.replace("Google ", "").replace("Mozilla ", "").replace("Microsoft ", "")  # emulate stock names
             webbrowser.register(name, None, webbrowser.GenericBrowser(cmd))
 
-AccessKeyType = Enum("AccessKeyType", ["MAIN_PAGE_GENERIC_KEY","MAIN_PAGE_DAM_50K","FILES2_BASE_URL_KEY","FILES3_TEMPLATE_KEY"])
+AccessKeyType = Enum("AccessKeyType", ["MAIN_PAGE_GENERIC_KEY","MAIN_PAGE_DAM_50K","FILES2_BASE_URL_KEY","FILES3_TEMPLATE_KEY","SWEEP_KEY"]) #sweep key primarily used for defurnished
 class KeyHandler:
 
     # not actually used currently 
