@@ -870,9 +870,67 @@ async def downloadCapture(pageid):
         consoleLog("Downloading primary model assets...")
         await downloadMainAssets(pageid, accessurl)
     os.chdir(THIS_MODEL_ROOT_DIR)
-    PROGRESS.ClearRelative()
-    consoleLog(f"Done, {PROGRESS}!")
+    generatedCrops=0
+    if CLA.getCommandLineArg(CommandLineArg.GENERATE_TILE_MESH_CROPS):
+        consoleLog("Generating tile_mesh crop images locally (no progress shown)...")
+        generatedCrops=GenerateMeshImageCrops()
 
+    PROGRESS.ClearRelative()
+    consoleLog(f"Done, {PROGRESS} GeneratedCrops: {generatedCrops}!")
+
+def GenerateMeshImageCrops():
+    global Image
+    from PIL import Image
+    models_dir = "models"
+    totalGenned=0
+    for model_id in os.listdir(models_dir):
+        model_path = os.path.join(models_dir, model_id, "assets", "mesh_tiles","~")
+        if not os.path.exists(model_path):
+            return
+
+        for tile_folder in os.listdir(model_path):
+            tile_path = os.path.join(model_path, tile_folder)
+            if not os.path.isdir(tile_path):
+                continue
+
+            # Process each jpg file here
+            for file in os.listdir(tile_path):
+                if not file.endswith('.jpg') or "crop" in file:
+                    continue
+                totalGenned+=GenerateCrops(os.path.join(tile_path,file))
+    return totalGenned
+
+def GenerateCrops(jpgFilePath):
+    cropSize = 512
+    testFilename=f"{jpgFilePath}crop={cropSize},{cropSize},x0,y0.jpg"
+    howMany=0
+    if os.path.exists(testFilename):
+        return howMany
+    img = Image.open(jpgFilePath)
+
+    maxSize = img.width
+    increment = int(maxSize / cropSize)
+
+    for x in range(0, increment):
+        for y in range(0, increment):
+            xPos = x/increment
+            yPos = x/increment
+            xPos = round(x / increment, 3) #computer mathsss
+            yPos = round(y / increment, 3) #computer mathsss
+            xPosStr=f"{xPos}"
+            yPosStr=f"{yPos}"
+            if xPosStr.endswith(".0"):
+                xPosStr = xPosStr[:-2]
+            if yPosStr.endswith(".0"):
+                yPosStr = yPosStr[:-2]
+            outFilename=f"{jpgFilePath}crop={cropSize},{cropSize},x{xPosStr},y{yPosStr}.jpg"
+            xPos *= maxSize
+            yPos *= maxSize
+            
+            cropped = img.crop((xPos, yPos, xPos+cropSize, yPos+cropSize))
+            cropped.save(outFilename)
+            howMany+=1
+    return howMany
 
 async def AdvancedAssetDownload(base_page_text: str):
     global MODEL_IS_DEFURNISHED, BASE_MODEL_ID, SWEEP_DO_4K
@@ -1156,7 +1214,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             raw_path += "index.html"
 
         if raw_path.startswith("/JSNetProxy.js"):
-            logging.info("Using our javascript network proxier")
+            consoleDebugLog("Using our javascript network proxier", loglevel=logging.INFO)
             self.send_response(200)
             self.end_headers()
             with open(os.path.join(BASE_MATTERPORTDL_DIR, "JSNetProxy.js"), "r", encoding="UTF-8") as f:
@@ -1184,6 +1242,8 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             if os.path.exists(f".{test_path}"):
                 raw_path = test_path
                 redirect_msg = "dollhouse/floorplan texture request that we have downloaded, better than generic texture file"
+            else:
+                consoleDebugLog(f"Requested crop texture not found: {test_path} falling back to full res may show visual issues", loglevel=logging.WARNING)
 
         if raw_path != orig_raw_path:
             self.path = raw_path
@@ -1194,7 +1254,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 redirect_msg = "modified version exists"
 
         if redirect_msg is not None or orig_request != self.path:
-            logging.info(f"Redirecting {orig_request} => {self.path} as {redirect_msg}")
+            consoleDebugLog(f"Redirecting {orig_request} => {self.path} as {redirect_msg}", loglevel=logging.INFO)
         SimpleHTTPRequestHandler.do_GET(self)
 
     def isPotentialModifiedFile(self):
@@ -1221,7 +1281,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
 
         if post_msg is not None:
-            logging.log(logLevel, f"Handling a graph request on {self.path}: {post_msg}")
+            consoleDebugLog(f"Handling a graph request on {self.path}: {post_msg}", loglevel=logLevel)
 
     def do_POST(self):
         post_msg = None
@@ -1240,7 +1300,7 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             pass
         finally:
             if post_msg is not None:
-                logging.log(logLevel, f"Handling a post request on {self.path}: {post_msg}")
+                consoleDebugLog(f"Handling a post request on {self.path}: {post_msg}", loglevel=logLevel)
 
         self.do_GET()  # just treat the POST as a get otherwise:)
 
@@ -1416,7 +1476,7 @@ class KeyHandler:
         return url.replace(match.group(0), key)
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS","QUIET", "HELP", "ADV_HELP", "AUTO_SERVE","FIND_URL_KEY","REFRESH_KEY_FILES"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS","QUIET", "HELP", "ADV_HELP", "AUTO_SERVE","FIND_URL_KEY","REFRESH_KEY_FILES","GENERATE_TILE_MESH_CROPS"])
 ArgAppliesTo = Enum("ArgAppliesTo", ["DOWNLOAD", "SERVING", "BOTH"])
 
 
@@ -1538,6 +1598,8 @@ if __name__ == "__main__":
     True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.FIND_URL_KEY, "A URL to try to find the access key for, makes a few minimal requests upfront to get needed keys", "","https://my.matterport.com/api/player/models/EGxFGTFyC9N/test.file", hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.REFRESH_KEY_FILES, "There are about a half dozen files always downloaded as they may contain access keys we need, this prevents these from downloading", True, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.GENERATE_TILE_MESH_CROPS, "Certain views like dollhouse require cropped versions of certain textures, this uses python to generate all those", True, hidden=False, allow_saved=True)
+    
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
 
     CLA.addCommandLineArg(CommandLineArg.QUIET, "Only show failure log message items when serving", False, applies_to=ArgAppliesTo.SERVING)
@@ -1601,6 +1663,8 @@ if __name__ == "__main__":
         except ValueError:
             logging.basicConfig(filename="server.log", filemode="w", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
+        if CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
+            logging.getLogger().addHandler(logging.StreamHandler())
 
         logging.info(f"Server starting up {sys_info()}")
         SERVED_BASE_URL = url = "http://" + sys.argv[2] + ":" + sys.argv[3]

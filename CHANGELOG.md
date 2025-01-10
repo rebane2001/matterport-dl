@@ -1,3 +1,6 @@
+## 2025-01-10
+- Local cropped mesh_tile image generation leads to much higher dollhouse views and fixes some texture errors
+
 ## 2024-12-30
 - Basic defurnished model support, nearly all excess 403/404 requests eliminated
 

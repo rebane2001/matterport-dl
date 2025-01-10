@@ -2,3 +2,4 @@ requests
 tqdm
 curl-cffi==0.7.1
 aiofiles
+Pillow
