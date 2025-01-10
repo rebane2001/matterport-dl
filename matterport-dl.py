@@ -20,12 +20,11 @@ import pathlib
 import re
 import os
 import hashlib
-import pprint
 import platform
 
 import shutil
 import sys
-from typing import Any, Self, TypeVar, ClassVar, cast
+from typing import Any, ClassVar, cast
 from dataclasses import dataclass
 
 import logging
@@ -487,27 +486,27 @@ async def downloadAssets(base,base_page_text):
             assets.append(file)
     
     
-    await downloadFile("STATIC_ASSET", True, f"https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
+    await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
 
     # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
     #js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
     # here is how the JS is prettied up (aka with spaces).  First are JS files with specific names, second are the js files to key, and finally are the css files.   The js files with specific names you still need the key for just instead of [number].[key].js it is [name].[key].js
     # , d.u = e => "js/" + ({
-	# 	239: "three-examples",
-	# 	777: "split",
-	# 	1662: "sdk-bundle",
-	# 	9114: "core",
-	# 	9553: "control-kit"
-	# } [e] || e) + "." + {
-	# 	172: "6c50ed8e5ff7620de75b",
-	# 	9553: "8aa28bbfc8f4948fd4d1",
-	# 	9589: "dc4901b493f7634edbcf",
-	# 	9860: "976dc6caac98abda24c9"
-	# } [e] + ".js", d.miniCssF = e => "css/" + ({
-	# 	7475: "late",
-	# 	9114: "core"
-	# } [e] || e) + ".css"
+    #     239: "three-examples",
+    #     777: "split",
+    #     1662: "sdk-bundle",
+    #     9114: "core",
+    #     9553: "control-kit"
+    # } [e] || e) + "." + {
+    #     172: "6c50ed8e5ff7620de75b",
+    #     9553: "8aa28bbfc8f4948fd4d1",
+    #     9589: "dc4901b493f7634edbcf",
+    #     9860: "976dc6caac98abda24c9"
+    # } [e] + ".js", d.miniCssF = e => "css/" + ({
+    #     7475: "late",
+    #     9114: "core"
+    # } [e] || e) + ".css"
 
     match = re.search(r"""
                 "js/"\+ # find js/+  (literal plus)
@@ -887,7 +886,7 @@ def GenerateMeshImageCrops():
         model_path = os.path.join(models_dir, model_id, "assets", "mesh_tiles","~")
         if not os.path.exists(model_path):
             return
-
+        
         for tile_folder in os.listdir(model_path):
             tile_path = os.path.join(model_path, tile_folder)
             if not os.path.isdir(tile_path):
