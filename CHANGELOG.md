@@ -1,3 +1,6 @@
+# 2025-01-24
+- Added embedded attachment / 'matterport tags' downloading for things like image points
+
 ## 2025-01-10
 - Local cropped mesh_tile image generation leads to much higher dollhouse views and fixes some texture errors
 

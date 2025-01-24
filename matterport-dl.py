@@ -658,6 +658,22 @@ async def downloadPlugins(pageid):
         await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
 
 
+async def downloadAttachments(pageid):
+    # May be the only thing from the actual prefetch graph we need;)
+    try:
+        with open("api/mp/models/graph_GetModelViewPrefetch.json", "r", encoding="UTF-8") as f:
+            graphModelSnapshotsJson = json.loads(f.read())
+        
+        for mattertag in graphModelSnapshotsJson["data"]["model"]["mattertags"]:
+            if "fileAttachments" in mattertag:
+                for attachment in mattertag["fileAttachments"]:
+                    await downloadFile("MODEL_ATTACHMENTS", True, attachment["url"], urlparse(attachment["url"]).path[1:], force_key=KeyHandler.LeaveKeyAlone)
+
+    except Exception:
+        logging.exception("Unable to open graph model for prefetch output and download the embedded attachments...")
+        return
+   
+
 async def downloadPics(pageid):
     # All these should already be downloaded through AdvancedAssetDownload likely they wont work here without a different access key any more....
     with open(f"api/v1/player/models/{pageid}/index.html", "r", encoding="UTF-8") as f:
@@ -827,7 +843,7 @@ async def downloadCapture(pageid):
     forcedProxyBase = "window.location.origin"
     # forcedProxyBase='"http://127.0.0.1:9000"'
     # window._ProxyAppendURL=1;
-    injectedjs = 'if (window.location.search != "?m=' + pageid + '") { document.location.search = "?m=' + pageid + '"; };window._NoTilde=' + ("false" if CLA.getCommandLineArg(CommandLineArg.TILDE) else "true") + ";window._ProxyBase=" + forcedProxyBase + ";"
+    injectedjs = 'if (!window.location.search.startsWith("?m=' + pageid + '")) { document.location.search = "?m=' + pageid + '"; };window._NoTilde=' + ("false" if CLA.getCommandLineArg(CommandLineArg.TILDE) else "true") + ";window._ProxyBase=" + forcedProxyBase + ";"
     content = base_page_text.replace(staticbase, ".")
     proxyAdd = ""
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
@@ -864,6 +880,8 @@ async def downloadCapture(pageid):
     if not MODEL_IS_DEFURNISHED:
         consoleLog("Downloading images...")
         await downloadPics(pageid)
+    consoleLog("Downloading matterport tags / embedded attachments...")
+    await downloadAttachments(pageid)
     open("api/v1/event", "a").close()
     if CLA.getCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD):
         consoleLog("Downloading primary model assets...")
