@@ -10,3 +10,8 @@ Recently matterport added AI generated defurnished views where they can automati
 
 ## Static hosting
 98% of the work required for static hosting is in place.  It is possible with some custom rewrites to likely even statically host on certain web servers without additional work.  To make it work on nearly any web server some changes are needed. Essentially we should write a "publish" action that copies everything into a static folder.  Any .modified files would override the originals.  A few things would need tweaks the graph posts (or now gets) and potentially the image crops.  The good news is this can be done with our JSNetProxy.  It can turn post requests into get (although no longer needed I believe).  It can rewrite urls to incorporate parameters.  So for any graph requests rather than say the url being `/api/mp/models/graph?operationName=GetShowcaseSweeps` it would simply need to rewrite it to `/api/mp/models/graph_GetShowcaseSweeps`. 
+
+
+## Authenticated (private/passworded) model downloads
+
+https://github.com/rebane2001/matterport-dl/issues/117 not a huge task just need to add some options for the session creation to be able to take cookies and explain to the user how to get what cookies we need.  The asyncsession does support providing initial cookies: https://curl-cffi.readthedocs.io/en/v0.5.8.1/api/curl_cffi.requests/
