@@ -13,6 +13,7 @@ It supports offline viewing of virtual tours and most tour features including:
 - Searching rooms
 - Dollhouse view
 - Floorplan view with room labels and dimensions
+- Embedded attachments / Matterport Tags
 - Skyboxes for outside environments
 - Most other Matterport plugins
 - Partial AI defurnished model support (must caller matterport-dl.py with the ID for the defurnished model cannot just auto swap *yet*)
