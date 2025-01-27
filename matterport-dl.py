@@ -469,6 +469,7 @@ async def downloadAssets(base,base_page_text):
 
     
     showcase_runtime_filename=""
+    react_vendor_filename=""
     for js in base_page_js_loads:
         file = js
         if "://" in js:
@@ -486,6 +487,8 @@ async def downloadAssets(base,base_page_text):
                 assets.append(file)
                 
         else:
+            if "vendors-react" in js:
+                react_vendor_filename = file
             assets.append(file)
     
     
@@ -573,7 +576,14 @@ async def downloadAssets(base,base_page_text):
         shouldExist = True
         toDownload.append(AsyncDownloadItem(type, shouldExist, f"{base}{asset}", local_file))
     await AsyncArrayDownload(toDownload)
-
+    if react_vendor_filename and os.path.exists(react_vendor_filename):
+        reactCont=""
+        with open(react_vendor_filename, "r", encoding="UTF-8") as f:
+            reactCont=f.read()
+        
+        reactCont=reactCont.replace("(t.src=s.src)","(t.src=\"\"+(t.src??s.src))") # hacky but in certain conditions react will try to reset the source on something after it loads to re-trigger the load event but this breaks jsnetproxy.  This allows the same triggering but uses the existing source if it exists. https://github.com/facebook/react/blob/37906d4dfbe80d71f312f7347bb9ddb930484d28/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js#L744. Right now this seems to only happens on embedded attachments.
+        with open(getModifiedName(react_vendor_filename), "w", encoding="UTF-8") as f:
+            f.write(reactCont)
     toDownload.clear()
 
 
