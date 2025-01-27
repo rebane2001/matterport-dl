@@ -321,6 +321,9 @@ async def downloadGraphModels(pageid):
         req_url = GRAPH_DATA_REQ[key].replace("[MATTERPORT_MODEL_ID]",pageid)
         text = await downloadFileAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph{req_url}", file_path, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES) and CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
         KeyHandler.SaveKeysFromText(f'GRAPH_{key}',text)
+        if key == "GetModelViewPrefetch":
+            KeyHandler.SetAccessKey(AccessKeyType.GRAPH_MODEL_VIEW_PREFETCH, KeyHandler.GetKeysFromStr(text)[0]) 
+        
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
             text = text.replace(f"https://cdn-2.{BASE_MATTERPORT_DOMAIN}", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
@@ -391,7 +394,7 @@ def logUrlDownloadFinish(type, localTarget, url, additionalParams, shouldExist, 
             logLevel = logging.ERROR
             error = f"Error of: {error}"
             prefix = "aFailure"
-            PROGRESS.Increment(ProgressType.Failed403 if "403" in error else ProgressType.Failed404 if "404" in error else ProgressType.FailedUnknown)
+            PROGRESS.Increment(ProgressType.Failed403 if "Error 403" in error else ProgressType.Failed404 if "Error 404" in error else ProgressType.FailedUnknown)
     else:
         PROGRESS.Increment(ProgressType.Success)
         error = ""
@@ -667,7 +670,7 @@ async def downloadAttachments(pageid):
         for mattertag in graphModelSnapshotsJson["data"]["model"]["mattertags"]:
             if "fileAttachments" in mattertag:
                 for attachment in mattertag["fileAttachments"]:
-                    await downloadFile("MODEL_ATTACHMENTS", True, attachment["url"], urlparse(attachment["url"]).path[1:], force_key=KeyHandler.LeaveKeyAlone)
+                    await downloadFile("MODEL_ATTACHMENTS", True, attachment["url"], urlparse(attachment["url"]).path[1:], force_key=KeyHandler.GetAccessKey(AccessKeyType.GRAPH_MODEL_VIEW_PREFETCH))
 
     except Exception:
         logging.exception("Unable to open graph model for prefetch output and download the embedded attachments...")
@@ -1382,7 +1385,7 @@ def RegisterWindowsBrowsers():
             name = name.replace("Google ", "").replace("Mozilla ", "").replace("Microsoft ", "")  # emulate stock names
             webbrowser.register(name, None, webbrowser.GenericBrowser(cmd))
 
-AccessKeyType = Enum("AccessKeyType", ["MAIN_PAGE_GENERIC_KEY","MAIN_PAGE_DAM_50K","FILES2_BASE_URL_KEY","FILES3_TEMPLATE_KEY","SWEEP_KEY"]) #sweep key primarily used for defurnished
+AccessKeyType = Enum("AccessKeyType", ["MAIN_PAGE_GENERIC_KEY","MAIN_PAGE_DAM_50K","FILES2_BASE_URL_KEY","FILES3_TEMPLATE_KEY","SWEEP_KEY","GRAPH_MODEL_VIEW_PREFETCH"]) #sweep key primarily used for defurnished, GRAPH_MODEL_VIEW_PREFETCH is only used for attachments
 class KeyHandler:
 
     # not actually used currently 
