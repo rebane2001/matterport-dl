@@ -482,12 +482,24 @@ async def downloadAssets(base, base_page_text):
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
     base_page_js_loads = re.findall(r"script src=[\"']([^\"']+[.]js)[\"']", base_page_text, flags=re.IGNORECASE)
 
+    # now they use module imports as well like: import(importBase + 'js/runtime~showcase.69d7273003fd73b7a8f3.js'),
+
+    import_js_loads = re.findall(r'import\([^\'\"()]*[\'"]([^\'"()]+\.js)[\'"]\s*\)',base_page_text,flags=re.IGNORECASE)
+
+    for js in import_js_loads:
+        base_page_js_loads.append(js)
+
+
     typeDict: dict[str, str] = {}
     for asset in assets:
         typeDict[asset] = "STATIC_ASSET"
 
-    showcase_runtime_filename = ""
-    react_vendor_filename = ""
+    showcase_runtime_filename : str = None
+    react_vendor_filename : str = None
+
+    if CLA.getCommandLineArg(CommandLineArg.DEBUG):
+        DebugSaveFile("js_found.txt", "\n".join(base_page_js_loads))
+
     for js in base_page_js_loads:
         file = js
         if "://" in js:
@@ -509,6 +521,10 @@ async def downloadAssets(base, base_page_text):
                 react_vendor_filename = file
             assets.append(file)
 
+    if showcase_runtime_filename is None:
+        raise Exception("In all js files found on the page could not find any that have showcase and runtime in the filename for the showcase runtime js file")
+    if react_vendor_filename is None:
+        raise Exception("In all js files found on the page could not find any that have vendors-react in the filename for the react vendor js file")
     await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
 
@@ -607,9 +623,22 @@ async def downloadAssets(base, base_page_text):
     toDownload.clear()
 
 
-async def downloadWebglVendors(urls):
-    for url in urls:
-        await downloadFile("WEBGL_FILE", False, url, urlparse(url).path[1:])
+async def downloadWebglVendors(base_page_text):
+    regex = r"https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three(?:\.[a-zA-Z0-9]+)?\.min\.js"
+    threeMin = re.search(regex, base_page_text).group()  # type: ignore - may be None , this is always.com
+    if threeMin is None:
+        raise Exception(f"Unable to extract the 3d js file name from the page, regex did not match: {regex}")
+    threeBase = threeMin.rpartition("/")[0]
+
+    webglVendors = ["three.module.min.js","three.core.min.js","libs/draco/gltf/draco_wasm_wrapper.js", "libs/draco/gltf/draco_decoder.wasm", "libs/basis/basis_transcoder.wasm","libs/basis/basis_transcoder.js"]
+    toDownload: list[AsyncDownloadItem] = []
+        
+    
+    for script in webglVendors:
+        url = f'{threeBase}/{script}'
+        toDownload.append(AsyncDownloadItem("WEBGL_FILE", False, url, urlparse(url).path[1:]))
+    await AsyncArrayDownload(toDownload)
+
 
 
 class AsyncDownloadItem:
@@ -852,12 +881,6 @@ async def downloadCapture(pageid):
     KeyHandler.SaveKeysFromText("MainBasePage", base_page_text)
     staticbase = re.search(rf'<base href="(https://static.{BASE_MATTERPORT_DOMAIN}/.*?)">', base_page_text).group(1)  # type: ignore - may be None
 
-    threeMin = re.search(r"https://static.matterport.com/webgl-vendors/three/[a-z0-9\-_/.]*/three.min.js", base_page_text).group()  # type: ignore - may be None , this is always.com
-    dracoWasmWrapper = threeMin.replace("three.min.js", "libs/draco/gltf/draco_wasm_wrapper.js")
-    dracoDecoderWasm = threeMin.replace("three.min.js", "libs/draco/gltf/draco_decoder.wasm")
-    basisTranscoderWasm = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.wasm")
-    basisTranscoderJs = threeMin.replace("three.min.js", "libs/basis/basis_transcoder.js")
-    webglVendors = [threeMin, dracoWasmWrapper, dracoDecoderWasm, basisTranscoderWasm, basisTranscoderJs]
     base_page_deunicode = base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape")  # some non-english matterport pages have unicode escapes for even the generic url chars
     if CLA.getCommandLineArg(CommandLineArg.DEBUG):
         DebugSaveFile("base_page_deunicode.html", base_page_deunicode)  # noqa: E701
@@ -888,7 +911,8 @@ async def downloadCapture(pageid):
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         content = RemoteDomainsReplace(content)
     else:
-        content = re.sub(r"(?P<preDomain>src\s*=\s*['" '"])https?://[^/"' "']+/", r"\g<preDomain>", content, flags=re.IGNORECASE)
+        content = re.sub(r"(?P<preDomain>src\s*=\s*['" '"])https?://[^/"' "']+/", r"\g<preDomain>", content, flags=re.IGNORECASE) # we replace any src= https://whatever.com  stripping the part up to the first slash
+        content = re.sub(r"import\(\s*\s*(?P<quoteChar>['\"])https?://[^/\"']+/", r"import(\g<quoteChar>./", content, flags=re.IGNORECASE)# similar to above but for import('http://...  must add ./ as well
         proxyAdd = "<script blocking='render' src='JSNetProxy.js'></script>"
 
     content = validUntilFix(content)
@@ -915,7 +939,7 @@ async def downloadCapture(pageid):
 
     consoleLog("Downloading static files...")
     await downloadAssets(staticbase, base_page_text)
-    await downloadWebglVendors(webglVendors)
+    await downloadWebglVendors(base_page_text)
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
     consoleLog("Downloading plugins...")
