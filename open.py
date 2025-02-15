@@ -51,7 +51,7 @@ def download(url):
     if name == None or len(name) == 0:
       name = input("please give the matterport a name: ")
     # initiating the download
-    subprocess.run(['python', 'matterport-dl.py', url])
+    subprocess.run(['python3', 'matterport-dl.py', url])
     save(name, url)
     # print(f"{bcolors.BOLD}{bcolors.OKGREEN}matterport {name} downloaded successfully{bcolors.ENDC}")
 
@@ -88,7 +88,7 @@ def initializing():
       initializing()
     print("opening " + downloads[keys[int(answer) - 1]])
     subprocess.run(
-    'python matterport-dl.py ' + downloads[keys[int(answer) - 1]] + ' 127.0.0.1 8080',
+    'python3 matterport-dl.py ' + downloads[keys[int(answer) - 1]] + ' 127.0.0.1 8080',
     shell=True
     )
   # deleting matterport
