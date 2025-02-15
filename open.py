@@ -22,7 +22,7 @@ def save (key, value):
   # writing new relation into the dictionary
   with open("converter.json", 'w') as pFile:
     pFile.writelines(file)
-def delete (key):
+def delete (key, alert=True):
   # getting current dictionary
   with open("converter.json", 'r') as pFile:
     file = pFile.readlines()
@@ -32,7 +32,8 @@ def delete (key):
   # writing new relation into the dictionary
   with open("converter.json", 'w') as pFile:
     pFile.writelines(file)
-  print(f"{bcolors.BOLD}{bcolors.OKGREEN}matterport successfully deleted{bcolors.ENDC}")
+  if alert:
+    print(f"{bcolors.BOLD}{bcolors.OKGREEN}matterport successfully deleted{bcolors.ENDC}")
 def download(url):
   # getting website content and extracting matterport urls
   headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
@@ -82,6 +83,9 @@ def initializing():
   rm_index = re.findall(r'delete ([0-9]+)', answer)
   rn_index = re.findall(r'rename ([0-9]+)', answer)
   if answer.isnumeric():
+    if not answer in range(0, len(downloads)):
+      print(f"{bcolors.BOLD}{bcolors.FAIL}please enter a number form 0 to {len(downloads)} to open the associated matterport{bcolors.ENDC}")
+      initializing()
     print("opening " + downloads[keys[int(answer) - 1]])
     subprocess.run(
     'python matterport-dl.py ' + downloads[keys[int(answer) - 1]] + ' 127.0.0.1 8080',
@@ -97,8 +101,8 @@ def initializing():
   # renaming matterport
   elif len(rn_index) == 1:
     key = keys[int(rn_index[0])-1]
-    delete(key)
     save(input("please enter the new name for the matterport: "), downloads[key])
+    delete(key, alert=False)
     print(f"{bcolors.BOLD}{bcolors.OKGREEN}renaming successful{bcolors.ENDC}")
     initializing()
   else:
