@@ -94,9 +94,14 @@ def initializing():
   # deleting matterport
   elif len(rm_index) == 1:
       key = keys[int(rm_index[0])-1]
-      path = get_absolute_path("downloads/" + downloads[key])
-      shutil.rmtree(path)
-      delete(key)
+      pInput = input(f'please enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or the ID {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: ')
+      while not (pInput in [key, downloads[key]] or pInput == "cancel"):
+        print(f'{bcolors.BOLD}{bcolors.FAIL}You did not enter the right name or ID. {bcolors.ENDC}')
+        pInput = input(f'Please try again (enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}')
+      if pInput != "cancel":
+        path = get_absolute_path("downloads/" + downloads[key])
+        shutil.rmtree(path)
+        delete(key)
       initializing()
   # renaming matterport
   elif len(rn_index) == 1:
