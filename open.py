@@ -35,27 +35,38 @@ def delete (key, alert=True):
   if alert:
     print(f"{bcolors.BOLD}{bcolors.OKGREEN}matterport successfully deleted{bcolors.ENDC}")
 def download(url):
-  # getting website content and extracting matterport urls
   headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
-  result = requests.get(url, headers=headers)
-  content = result.content.decode()
-  urls = set(re.findall(r'https://my\.matterport\.com/show/\?m=([a-zA-Z0-9]+)', content))
-  # TODO: support more website types?: https://my.matterport.com/models/EGxFGTFyC9N
-  # https://my.matterport.com/work?m=EGxFGTFyC9N
-  # urls = set(re.findall(r'https://my\.matterport\.com/(show/|work)\?m=([a-zA-Z0-9]+)', content))
-  if len(urls) < 1:
-    download(input("no matterport was found! please enter a valid web adress: "))
-    return
+  if "https://" in url:
+    # getting website content and extracting matterport urls
+    result = requests.get(url, headers=headers)
+    content = result.content.decode()
+    urls = set(re.findall(r'https://my\.matterport\.com/show/\?m=([a-zA-Z0-9]+)', content))
+    # TODO: support more website types?: https://my.matterport.com/models/EGxFGTFyC9N
+    # https://my.matterport.com/work?m=EGxFGTFyC9N
+    # urls = set(re.findall(r'https://my\.matterport\.com/(show/|work)\?m=([a-zA-Z0-9]+)', content))
+    if len(urls) < 1:
+      download(input("no matterport was found! please enter a valid web adress: "))
+      return
+  # ID entered
+  else: 
+    urls = [url]
   for url in urls:
     # abstracting the matterport name
     result = requests.get("https://my.matterport.com/show?m=" + url, headers=headers)
     content = result.content.decode()
-    name = re.findall(r'<title>(.*) - Matterport 3D Showcase</title>', content)[0]
+    try: 
+      name = re.findall(r'<title>(.*) - Matterport 3D Showcase</title>', content)[0]
+    except IndexError:
+      name = None
     if name == None or len(name) == 0:
       name = input("please give the matterport a name: ")
     # initiating the download
-    subprocess.run(['python3', 'matterport-dl.py', url])
-    save(name, url)
+    output = subprocess.run(['python3', 'matterport-dl.py', url])
+    if output.returncode == 1:
+      print(f'{bcolors.BOLD}{bcolors.FAIL}Download failed! Make sure you type in a valid web adress or ID. The web adress must contain "https://" Please consider that the downloader itself might be broken.{bcolors.ENDC} ')
+    else: 
+      save(name, url)
+    print('-' * os.get_terminal_size().columns)
     # print(f"{bcolors.BOLD}{bcolors.OKGREEN}matterport {name} downloaded successfully{bcolors.ENDC}")
 
 class bcolors:
@@ -77,7 +88,7 @@ def initializing():
     file = pFile.readlines()
     downloads = json.loads(file[0].split("\n")[0])
   # downloads = {"Stiftung Museum der belgischen Streitkräfte Deutschlands": "NwnPwA7ppRc", "Burghofmuseum": "5H92DDxwJK8", "Osthofentormuseum": "LejqidHAk6q", "Sankt Maria zur Wiese": "C3eLgupYBMm", "Sankt Maria zur Höhe": "8zTg44vs7L1", "Petrikirche Soest": "AW4kxBZ4wAm", "Grünsandsteinmuseum Soest": "qP8dUoSBk3R", "Brunsteinkapelle Soest": "aJhHnHiGp1s", "Der Bunker in Soest 2020: LIEBES LEBEN MUSEUM": "EUQnCirRNGp", "Museum Wilhelm Morgner": "gDFTCKQoFPQ"}
-  print(f'To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below. \nTo {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter the web adress{bcolors.ENDC} of it instead. If you would like to download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web adresses {bcolors.BOLD}seperated by " "{bcolors.ENDC}\nTo {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nTo {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nYou can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport. ')
+  print(f'To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below. \nTo {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter the web adress or ID{bcolors.ENDC} of it instead. If you would like to download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web adresses {bcolors.BOLD}seperated by " "{bcolors.ENDC}\nTo {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nTo {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nYou can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport. ')
   keys = sorted(list(downloads.keys()))
   for i in range(len(keys)):
       print("[" + str(i + 1) + "] " + keys[i])
