@@ -110,6 +110,7 @@ def initializing():
     answer = input("input: ")
     rm_index = re.findall(r"delete (.*)", answer)
     rn_index = re.findall(r"rename (.*)", answer)
+    dl_match = re.findall(r'dl (.*)', answer)
     if answer.isnumeric() or answer in keys:
         if answer in keys:
             answer = keys.index(answer) + 1
@@ -137,10 +138,14 @@ def initializing():
         delete(key, alert=False)
         print(f"{bcolors.BOLD}{bcolors.OKGREEN}renaming successful{bcolors.ENDC}")
         initializing()
-    else:
-        for url in answer.split(" "):
+  # downloading matterport(s)
+    elif len(dl_match) == 1:
+        for url in dl_match[0].split(" "):
             download(url)
         initializing()
+    else:
+        print(f"{bcolors.BOLD}{bcolors.FAIL}Model not found or invalid command. To download, use 'dl' followed by the URL or ID. To open a matterport, enter its number or name.{bcolors.ENDC}")
+    initializing()
 
 
 # gets matterport name by ID or name and returns the name
