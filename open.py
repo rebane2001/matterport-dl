@@ -40,6 +40,9 @@ def download(url):
   result = requests.get(url, headers=headers)
   content = result.content.decode()
   urls = set(re.findall(r'https://my\.matterport\.com/show/\?m=([a-zA-Z0-9]+)', content))
+  # TODO: support more website types?: https://my.matterport.com/models/EGxFGTFyC9N
+  # https://my.matterport.com/work?m=EGxFGTFyC9N
+  # urls = set(re.findall(r'https://my\.matterport\.com/(show/|work)\?m=([a-zA-Z0-9]+)', content))
   if len(urls) < 1:
     download(input("no matterport was found! please enter a valid web adress: "))
     return
@@ -74,16 +77,20 @@ def initializing():
     file = pFile.readlines()
     downloads = json.loads(file[0].split("\n")[0])
   # downloads = {"Stiftung Museum der belgischen Streitkräfte Deutschlands": "NwnPwA7ppRc", "Burghofmuseum": "5H92DDxwJK8", "Osthofentormuseum": "LejqidHAk6q", "Sankt Maria zur Wiese": "C3eLgupYBMm", "Sankt Maria zur Höhe": "8zTg44vs7L1", "Petrikirche Soest": "AW4kxBZ4wAm", "Grünsandsteinmuseum Soest": "qP8dUoSBk3R", "Brunsteinkapelle Soest": "aJhHnHiGp1s", "Der Bunker in Soest 2020: LIEBES LEBEN MUSEUM": "EUQnCirRNGp", "Museum Wilhelm Morgner": "gDFTCKQoFPQ"}
-  print(f'To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number{bcolors.ENDC} of the matterport in the list below. \nTo {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter the web adress{bcolors.ENDC} of it instead. If you would like to download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web adresses {bcolors.BOLD}seperated by " "{bcolors.ENDC}\nTo {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number in the listed below.\nTo {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number in the listed below.')
+  print(f'To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below. \nTo {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter the web adress{bcolors.ENDC} of it instead. If you would like to download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web adresses {bcolors.BOLD}seperated by " "{bcolors.ENDC}\nTo {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nTo {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nYou can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport. ')
   keys = sorted(list(downloads.keys()))
   for i in range(len(keys)):
       print("[" + str(i + 1) + "] " + keys[i])
   print('-' * os.get_terminal_size().columns)
+  global WORDS
+  WORDS = [*keys, *["delete ", "rename "]]
   answer = input("input: ")
-  rm_index = re.findall(r'delete ([0-9]+)', answer)
-  rn_index = re.findall(r'rename ([0-9]+)', answer)
-  if answer.isnumeric():
-    if not answer in range(0, len(downloads)):
+  rm_index = re.findall(r'delete (.*)', answer)
+  rn_index = re.findall(r'rename (.*)', answer)
+  if answer.isnumeric() or answer in keys:
+    if answer in keys:
+      answer = keys.index(answer) + 1
+    elif not answer in range(0, len(downloads)):
       print(f"{bcolors.BOLD}{bcolors.FAIL}please enter a number form 0 to {len(downloads)} to open the associated matterport{bcolors.ENDC}")
       initializing()
     print("opening " + downloads[keys[int(answer) - 1]])
@@ -93,19 +100,19 @@ def initializing():
     )
   # deleting matterport
   elif len(rm_index) == 1:
-      key = keys[int(rm_index[0])-1]
-      pInput = input(f'please enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or the ID {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: ')
-      while not (pInput in [key, downloads[key]] or pInput == "cancel"):
-        print(f'{bcolors.BOLD}{bcolors.FAIL}You did not enter the right name or ID. {bcolors.ENDC}')
-        pInput = input(f'Please try again (enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}')
-      if pInput != "cancel":
-        path = get_absolute_path("downloads/" + downloads[key])
-        shutil.rmtree(path)
-        delete(key)
-      initializing()
+    key = getKey(rm_index[0], keys)
+    pInput = input(f'please enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or the ID {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: ')
+    while not (pInput in [key, downloads[key]] or pInput == "cancel"):
+      print(f'{bcolors.BOLD}{bcolors.FAIL}You did not enter the right name or ID. {bcolors.ENDC}')
+      pInput = input(f'Please try again (enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}')
+    if pInput != "cancel":
+      path = get_absolute_path("downloads/" + downloads[key])
+      shutil.rmtree(path)
+      delete(key)
+    initializing()
   # renaming matterport
   elif len(rn_index) == 1:
-    key = keys[int(rn_index[0])-1]
+    key = getKey(rn_index[0], keys)
     save(input("please enter the new name for the matterport: "), downloads[key])
     delete(key, alert=False)
     print(f"{bcolors.BOLD}{bcolors.OKGREEN}renaming successful{bcolors.ENDC}")
@@ -114,4 +121,32 @@ def initializing():
     for url in answer.split(" "):
       download(url)
     initializing()
+
+# gets matterport name by ID or name and returns the name
+def getKey(input, keys):
+  try:
+    key = keys[int(input)-1]
+  except ValueError:
+    if input in keys:
+      key = input
+    else:
+      print(f'{bcolors.BOLD}{bcolors.FAIL}You did not type the name of the matterport correctly. Please try again.{bcolors.ENDC}')
+      initializing()
+  return key
+
+# tab autocomplete
+import readline
+WORDS = ["delete ", "rename"]
+def completer(text, state):
+    # Build a list of matching words
+    matches = [word for word in WORDS if word.lower().startswith(text.lower())]
+    try:
+        return matches[state]
+    except IndexError:
+        return None
+
+# Set our completer function and bind the Tab key for completion.
+readline.set_completer(completer)
+readline.parse_and_bind("tab: complete")
+
 initializing()
