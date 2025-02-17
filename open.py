@@ -4,6 +4,7 @@ import re
 import json
 import shutil
 import os
+import sys
 
 def get_absolute_path(relative_path):
   # Get the absolute path of the current script
@@ -61,7 +62,7 @@ def download(url):
     if name == None or len(name) == 0:
       name = input("please give the matterport a name: ")
     # initiating the download
-    output = subprocess.run(['python3', 'matterport-dl.py', url])
+    output = subprocess.run([sys.executable, 'matterport-dl.py', url])
     if output.returncode == 1:
       print(f'{bcolors.BOLD}{bcolors.FAIL}Download failed! Make sure you type in a valid web adress or ID. The web adress must contain "https://" Please consider that the downloader itself might be broken.{bcolors.ENDC} ')
     else: 
@@ -105,10 +106,7 @@ def initializing():
       print(f"{bcolors.BOLD}{bcolors.FAIL}please enter a number form 0 to {len(downloads)} to open the associated matterport{bcolors.ENDC}")
       initializing()
     print("opening " + downloads[keys[int(answer) - 1]])
-    subprocess.run(
-    'python3 matterport-dl.py ' + downloads[keys[int(answer) - 1]] + ' 127.0.0.1 8080',
-    shell=True
-    )
+    subprocess.run([sys.executable, 'matterport-dl.py', downloads[keys[int(answer) - 1]], '127.0.0.1', '8080'])
   # deleting matterport
   elif len(rm_index) == 1:
     key = getKey(rm_index[0], keys)
