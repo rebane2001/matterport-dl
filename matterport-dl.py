@@ -484,18 +484,17 @@ async def downloadAssets(base, base_page_text):
 
     # now they use module imports as well like: import(importBase + 'js/runtime~showcase.69d7273003fd73b7a8f3.js'),
 
-    import_js_loads = re.findall(r'import\([^\'\"()]*[\'"]([^\'"()]+\.js)[\'"]\s*\)',base_page_text,flags=re.IGNORECASE)
+    import_js_loads = re.findall(r'import\([^\'\"()]*[\'"]([^\'"()]+\.js)[\'"]\s*\)', base_page_text, flags=re.IGNORECASE)
 
     for js in import_js_loads:
         base_page_js_loads.append(js)
-
 
     typeDict: dict[str, str] = {}
     for asset in assets:
         typeDict[asset] = "STATIC_ASSET"
 
-    showcase_runtime_filename : str = None
-    react_vendor_filename : str = None
+    showcase_runtime_filename: str = None
+    react_vendor_filename: str = None
 
     if CLA.getCommandLineArg(CommandLineArg.DEBUG):
         DebugSaveFile("js_found.txt", "\n".join(base_page_js_loads))
@@ -553,7 +552,7 @@ async def downloadAssets(base, base_page_text):
                 (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
                 (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
                 css #stopping when we see the css
-                (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [ 
+                (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
                 .+? #skip the minimum amount to get to next part
                 miniCss=.+? #find miniCss= then skip minimum to first &&
                 &&
@@ -630,15 +629,13 @@ async def downloadWebglVendors(base_page_text):
         raise Exception(f"Unable to extract the 3d js file name from the page, regex did not match: {regex}")
     threeBase = threeMin.rpartition("/")[0]
 
-    webglVendors = ["three.module.min.js","three.core.min.js","libs/draco/gltf/draco_wasm_wrapper.js", "libs/draco/gltf/draco_decoder.wasm", "libs/basis/basis_transcoder.wasm","libs/basis/basis_transcoder.js"]
+    webglVendors = ["three.module.min.js", "three.core.min.js", "libs/draco/gltf/draco_wasm_wrapper.js", "libs/draco/gltf/draco_decoder.wasm", "libs/basis/basis_transcoder.wasm", "libs/basis/basis_transcoder.js"]
     toDownload: list[AsyncDownloadItem] = []
-        
-    
+
     for script in webglVendors:
-        url = f'{threeBase}/{script}'
+        url = f"{threeBase}/{script}"
         toDownload.append(AsyncDownloadItem("WEBGL_FILE", False, url, urlparse(url).path[1:]))
     await AsyncArrayDownload(toDownload)
-
 
 
 class AsyncDownloadItem:
@@ -850,8 +847,6 @@ async def downloadCapture(pageid):
         if not os.path.exists(fl):
             shutil.copy2(os.path.join(BASE_MATTERPORTDL_DIR, fl), fl)
 
-    CLA.SaveToFile(RUN_ARGS_CONFIG_NAME)
-
     logging.basicConfig(filename="run_report.log", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S", encoding="utf-8")
 
     if CLA.getCommandLineArg(CommandLineArg.DEBUG):
@@ -865,6 +860,14 @@ async def downloadCapture(pageid):
     base_page_text = ""
     try:
         base_page_text: str = await downloadFileAndGetText("MAIN", True, url, "index.html", always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+
+        curTitle = CLA.getCommandLineArg(CommandLineArg.TITLE)
+        if curTitle == "":
+            page_title = re.findall(r"<title>(.*)</title>", base_page_text)[0]
+            page_title = page_title.rsplit("-", 1)[0].strip()
+            CLA.setCommandLineArg(CommandLineArg.TITLE, page_title)
+
+        CLA.SaveToFile(RUN_ARGS_CONFIG_NAME)
 
         if f"{CHINA_MATTERPORT_DOMAIN}/showcase" in base_page_text:
             BASE_MATTERPORT_DOMAIN = CHINA_MATTERPORT_DOMAIN
@@ -911,8 +914,8 @@ async def downloadCapture(pageid):
     if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
         content = RemoteDomainsReplace(content)
     else:
-        content = re.sub(r"(?P<preDomain>src\s*=\s*['" '"])https?://[^/"' "']+/", r"\g<preDomain>", content, flags=re.IGNORECASE) # we replace any src= https://whatever.com  stripping the part up to the first slash
-        content = re.sub(r"import\(\s*\s*(?P<quoteChar>['\"])https?://[^/\"']+/", r"import(\g<quoteChar>./", content, flags=re.IGNORECASE)# similar to above but for import('http://...  must add ./ as well
+        content = re.sub(r"(?P<preDomain>src\s*=\s*['" '"])https?://[^/"' "']+/", r"\g<preDomain>", content, flags=re.IGNORECASE)  # we replace any src= https://whatever.com  stripping the part up to the first slash
+        content = re.sub(r"import\(\s*\s*(?P<quoteChar>['\"])https?://[^/\"']+/", r"import(\g<quoteChar>./", content, flags=re.IGNORECASE)  # similar to above but for import('http://...  must add ./ as well
         proxyAdd = "<script blocking='render' src='JSNetProxy.js'></script>"
 
     content = validUntilFix(content)
@@ -1562,7 +1565,7 @@ class KeyHandler:
         return url.replace(match.group(0), key_val)
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "QUIET", "HELP", "ADV_HELP", "AUTO_SERVE", "FIND_URL_KEY", "FIND_URL_KEY_AND_DOWNLOAD", "REFRESH_KEY_FILES", "GENERATE_TILE_MESH_CROPS"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "QUIET", "HELP", "ADV_HELP", "AUTO_SERVE", "FIND_URL_KEY", "FIND_URL_KEY_AND_DOWNLOAD", "REFRESH_KEY_FILES", "GENERATE_TILE_MESH_CROPS", "TITLE"])
 ArgAppliesTo = Enum("ArgAppliesTo", ["DOWNLOAD", "SERVING", "BOTH"])
 
 
@@ -1618,7 +1621,7 @@ class CLA:
             config = json.loads(f.read())
             for arg in CLA.all_args:
                 if arg.arg.name in config:
-                    arg.currentValue = config[arg.arg.name]
+                    CLA.setCommandLineArg(arg.arg, config[arg.arg.name])
 
     @staticmethod
     def SaveToFile(file: str):
@@ -1668,6 +1671,14 @@ class CLA:
         CLA.value_cache[arg] = cla.currentValue
         return cla.currentValue
 
+    @staticmethod
+    def setCommandLineArg(arg: CommandLineArg, value: Any):
+        CLA.value_cache.pop(arg, None)  # Clear cache entry if exists
+        cla = next(filter(lambda c: c.arg == arg, CLA.all_args), None)
+        if not cla:
+            raise Exception(f"Invalid command line arg requested???: {arg}")
+        cla.currentValue = value
+
 
 DEFAULTS_JSON_FILE = "defaults.json"
 if __name__ == "__main__":
@@ -1694,6 +1705,7 @@ if __name__ == "__main__":
     CLA.addCommandLineArg(CommandLineArg.AUTO_SERVE, "Used to automatically start the server hosting a specific file, see README for details", "", "page_id_or_alias|host|port|what-browser", applies_to=ArgAppliesTo.SERVING, hidden=True)
 
     CLA.addCommandLineArg(CommandLineArg.HELP, "", False, hidden=True, allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.TITLE, "Model title override, normally extracted from page title", "", hidden=True)
     CLA.addCommandLineArg(CommandLineArg.ADV_HELP, "Show advanced command line options normally hidden, not recommended for most users", False, hidden=False, allow_saved=False, applies_to=ArgAppliesTo.BOTH)
     CLA.parseArgs()
     browserLaunch = ""
