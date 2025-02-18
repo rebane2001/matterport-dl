@@ -12,43 +12,43 @@ import readline
 
 
 def get_absolute_path(relative_path):
-    # Get the absolute path of the current script
     script_directory = os.path.dirname(os.path.abspath(__file__))
-    # Combine the script's directory with the relative path
     return os.path.join(script_directory, relative_path)
 
 
-# saving the relation between the URL/matterport-ID (value) and the entered name (key)
-def save(key, value):
-    # getting current dictionary
+def load_converter_json():
     with open("converter.json", "r") as pFile:
-        file = pFile.readlines()
-        obj = json.loads(file[0].split("\n")[0])
-        obj[key] = value
-        file[0] = json.dumps(obj) + "\n"
-    # writing new relation into the dictionary
+        return json.loads(pFile.readline().strip())
+
+
+def save_converter_json(data):
     with open("converter.json", "w") as pFile:
-        pFile.writelines(file)
+        pFile.write(json.dumps(data) + "\n")
+
+
+def print_colored(message, color, bold=True):
+    prefix = f"{bcolors.BOLD}" if bold else ""
+    print(f"{prefix}{color}{message}{bcolors.ENDC}")
+
+
+def save(key, value):
+    data = load_converter_json()
+    data[key] = value
+    save_converter_json(data)
 
 
 def delete(key, alert=True):
-    # getting current dictionary
-    with open("converter.json", "r") as pFile:
-        file = pFile.readlines()
-        obj = json.loads(file[0].split("\n")[0])
-        obj.pop(key)
-        file[0] = json.dumps(obj) + "\n"
-    # writing new relation into the dictionary
-    with open("converter.json", "w") as pFile:
-        pFile.writelines(file)
+    data = load_converter_json()
+    data.pop(key)
+    save_converter_json(data)
     if alert:
-        print(f"{bcolors.BOLD}{bcolors.OKGREEN}matterport successfully deleted{bcolors.ENDC}")
+        print_colored("matterport successfully deleted", bcolors.OKGREEN)
 
 
 def download(url):
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36"}
+
     if "https://" in url:
-        # getting website content and extracting matterport urls
         result = requests.get(url, headers=headers)
         content = result.content.decode()
         urls = set(re.findall(r"https://my\.matterport\.com/show/\?m=([a-zA-Z0-9]+)", content))
@@ -58,27 +58,26 @@ def download(url):
         if len(urls) < 1:
             download(input("no matterport was found! please enter a valid web address: "))
             return
-    # ID entered
     else:
         urls = [url]
+
     for url in urls:
-        # abstracting the matterport name
         result = requests.get("https://my.matterport.com/show?m=" + url, headers=headers)
         content = result.content.decode()
         try:
             name = re.findall(r"<title>(.*) - Matterport 3D Showcase</title>", content)[0]
         except IndexError:
             name = None
-        if name is None or len(name) == 0:
+
+        if not name:
             name = input("please give the matterport a name: ")
-        # initiating the download
+
         output = subprocess.run([sys.executable, "matterport-dl.py", url])
         if output.returncode == 1:
-            print(f'{bcolors.BOLD}{bcolors.FAIL}Download failed! Make sure you type in a valid web address or ID. The web address must contain "https://" Please consider that the downloader itself might be broken.{bcolors.ENDC} ')
+            print_colored('Download failed! Make sure you type in a valid web address or ID. The web address must contain "https://" Please consider that the downloader itself might be broken.', bcolors.FAIL)
         else:
             save(name, url)
         print("-" * os.get_terminal_size().columns)
-        # print(f"{bcolors.BOLD}{bcolors.OKGREEN}matterport {name} downloaded successfully{bcolors.ENDC}")
 
 
 class bcolors:
@@ -93,29 +92,33 @@ class bcolors:
     UNDERLINE = "\033[4m"
 
 
-# "starting screen" of the program
 def initializing():
     print("-" * os.get_terminal_size().columns)
-    # loading the name to ID converter
-    with open("converter.json", "r") as pFile:
-        file = pFile.readlines()
-        downloads = json.loads(file[0].split("\n")[0])
-    # downloads = {"Stiftung Museum der belgischen Streitkräfte Deutschlands": "NwnPwA7ppRc", "Burghofmuseum": "5H92DDxwJK8", "Osthofentormuseum": "LejqidHAk6q", "Sankt Maria zur Wiese": "C3eLgupYBMm", "Sankt Maria zur Höhe": "8zTg44vs7L1", "Petrikirche Soest": "AW4kxBZ4wAm", "Grünsandsteinmuseum Soest": "qP8dUoSBk3R", "Brunsteinkapelle Soest": "aJhHnHiGp1s", "Der Bunker in Soest 2020: LIEBES LEBEN MUSEUM": "EUQnCirRNGp", "Museum Wilhelm Morgner": "gDFTCKQoFPQ"}
-    print(f'To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below. \nTo {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter the web address or ID{bcolors.ENDC} of it instead. If you would like to download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}\nTo {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nTo {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or the name of the matterport in the listed below.\nYou can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport. ')
+    downloads = load_converter_json()
+
+    print(f"To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
+    print(f"To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter the web address or ID{bcolors.ENDC} of it instead.")
+    print(f'To download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}')
+    print(f'To {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or name.')
+    print(f'To {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or name.')
+    print(f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport.")
+
     keys = sorted(list(downloads.keys()))
-    for i in range(len(keys)):
-        print("[" + str(i + 1) + "] " + keys[i])
+    for i, key in enumerate(keys, 1):
+        print(f"[{i}] {key}")
     print("-" * os.get_terminal_size().columns)
+
     global WORDS
     WORDS = [*keys, *["delete ", "rename "]]
     answer = input("input: ")
+
     rm_index = re.findall(r"delete (.*)", answer)
     rn_index = re.findall(r"rename (.*)", answer)
     dl_match = re.findall(r"dl (.*)", answer)
 
     if answer.isnumeric():
         if int(answer) not in range(1, len(downloads) + 1):
-            print(f"{bcolors.BOLD}{bcolors.FAIL}please enter a number from 1 to {len(downloads)} to open the associated matterport{bcolors.ENDC}")
+            print_colored(f"please enter a number from 1 to {len(downloads)} to open the associated matterport", bcolors.FAIL)
             initializing()
             return
         key = keys[int(answer) - 1]
@@ -125,7 +128,7 @@ def initializing():
         key = getKey(rm_index[0], keys)
         pInput = input(f'please enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or the ID {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: ')
         while not (pInput in [key, downloads[key]] or pInput == "cancel"):
-            print(f"{bcolors.BOLD}{bcolors.FAIL}You did not enter the right name or ID. {bcolors.ENDC}")
+            print_colored("You did not enter the right name or ID.", bcolors.FAIL)
             pInput = input(f'Please try again (enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}')
         if pInput != "cancel":
             path = get_absolute_path("downloads/" + downloads[key])
@@ -133,56 +136,45 @@ def initializing():
             delete(key)
     elif len(rn_index) == 1:
         key = getKey(rn_index[0], keys)
-        save(input("please enter the new name for the matterport: "), downloads[key])
+        new_name = input("please enter the new name for the matterport: ")
+        save(new_name, downloads[key])
         delete(key, alert=False)
-        print(f"{bcolors.BOLD}{bcolors.OKGREEN}renaming successful{bcolors.ENDC}")
+        print_colored("renaming successful", bcolors.OKGREEN)
     elif len(dl_match) == 1:
         for url in dl_match[0].split(" "):
             download(url)
     else:
-        # Find case-insensitive partial matches for the entered name
         matches = [key for key in keys if key.lower().startswith(answer.lower())]
         if matches:
-            key = matches[0]  # Take the first match
+            key = matches[0]
             print("opening " + downloads[key])
             subprocess.run([sys.executable, "matterport-dl.py", downloads[key], "127.0.0.1", "8080"])
         else:
-            print(f"{bcolors.BOLD}{bcolors.FAIL}Model not found or invalid command. To download, use 'dl' followed by the URL or ID. To open a matterport, enter its number or name.{bcolors.ENDC}")
+            print_colored("Model not found or invalid command. To download, use 'dl' followed by the URL or ID. To open a matterport, enter its number or name.", bcolors.FAIL)
 
     initializing()
 
 
-# gets matterport name by ID or name and returns the name
+def find_matches(text, items):
+    """Find items that start with the given text (case insensitive)"""
+    return [item for item in items if item.lower().startswith(text.lower())]
+
 def getKey(input, keys):
     try:
-        key = keys[int(input) - 1]
+        return keys[int(input) - 1]
     except ValueError:
-        # Find any keys that match the input case-insensitively and take first match
-        matches = [key for key in keys if key.lower().startswith(input.lower())]
+        matches = find_matches(input, keys)
         if matches:
-            key = matches[0]
-        else:
-            print(f"{bcolors.BOLD}{bcolors.FAIL}No matching matterport found. Please try again.{bcolors.ENDC}")
-            initializing()
-    return key
-
-
-# tab autocomplete
-import readline
-
-WORDS = ["delete ", "rename"]
-
+            return matches[0]
+        print_colored("No matching matterport found. Please try again.", bcolors.FAIL)
+        initializing()
 
 def completer(text, state):
-    # Build a list of matching words
-    matches = [word for word in WORDS if word.lower().startswith(text.lower())]
-    try:
-        return matches[state]
-    except IndexError:
-        return None
+    matches = find_matches(text, WORDS)
+    return matches[state] if state < len(matches) else None
 
 
-# Set our completer function and bind the Tab key for completion.
+WORDS = ["delete ", "rename "]
 readline.set_completer(completer)
 readline.parse_and_bind("tab: complete")
 
