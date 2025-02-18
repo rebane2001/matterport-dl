@@ -80,9 +80,51 @@ def update_model_alias(model_id, new_title):
     return False
 
 
+def print_separator():
+    print("-" * os.get_terminal_size().columns)
+
+
 def print_colored(message, color, bold=True):
     prefix = f"{bcolors.BOLD}" if bold else ""
     print(f"{prefix}{color}{message}{bcolors.ENDC}")
+
+
+def error_message(msg):
+    print_colored(msg, bcolors.FAIL)
+
+
+class bcolors:
+    COLORS = {
+        "HEADER": "95",
+        "OKBLUE": "94",
+        "OKCYAN": "96",
+        "OKGREEN": "92",
+        "WARNING": "93",
+        "FAIL": "91",
+        "UNINMPORTANT": "2",
+        "ENDC": "0",
+        "BOLD": "1",
+    }
+
+    def __init__(self):
+        # Dynamically create color attributes
+        for name, code in self.COLORS.items():
+            setattr(self, name, f"\033[{code}m")
+
+
+bcolors = bcolors()  # Initialize once
+
+COMMANDS = {"delete": ["del", "rm", "delete"], "rename": ["re", "ren", "rename"], "download": ["dl", "download"]}
+
+
+def parse_command(answer):
+    """Parse user input into command and argument"""
+    answer = answer.strip()
+    for cmd_type, aliases in COMMANDS.items():
+        for alias in aliases:
+            if answer.lower().startswith(f"{alias} "):
+                return cmd_type, answer[len(alias) :].strip()
+    return None, answer
 
 
 def download(url):
@@ -105,37 +147,48 @@ def download(url):
         output = subprocess.run([sys.executable, "matterport-dl.py", url])
         if output.returncode == 1:
             print_colored('Download failed! Make sure you type in a valid web address or ID. The web address must contain "https://" Please consider that the downloader itself might be broken.', bcolors.FAIL)
-        print("-" * os.get_terminal_size().columns)
+        print_separator()
 
 
-class bcolors:
-    HEADER = "\033[95m"
-    OKBLUE = "\033[94m"
-    OKCYAN = "\033[96m"
-    OKGREEN = "\033[92m"
-    WARNING = "\033[93m"
-    FAIL = "\033[91m"
-    UNINMPORTANT = "\033[2m"
-    ENDC = "\033[0m"
-    BOLD = "\033[1m"
-    UNDERLINE = "\033[4m"
+def getModelId(input_text, keys, downloads):
+    """Get a key from user input, either by index or name prefix"""
+    if not input_text:
+        return None
+
+    # Try index first
+    try:
+        match = keys[int(input_text) - 1]
+        print(f"Selecting {match} ({downloads[match]})")
+        return match
+    except (ValueError, IndexError):
+        pass
+
+    # Try direct key match
+    matches = [k for k in keys if k.lower().startswith(input_text.lower())]
+    if matches:
+        match = matches[0]
+        print(f"Selecting {match} ({downloads[match]})")
+        return match
+
+    # Try title match
+    for key in keys:
+        if downloads[key].lower().startswith(input_text.lower()):
+            print(f"Selecting {key} ({downloads[key]})")
+            return key
+
+    return None
 
 
-def parse_command(answer):
-    """Parse user input into command and argument"""
-    commands = {"delete": ["del", "rm", "delete"], "rename": ["rename", "re", "ren"], "download": ["dl", "download"]}
-
-    answer = answer.strip()
-    for cmd_type, aliases in commands.items():
-        for alias in aliases:
-            if answer.lower().startswith(f"{alias} "):
-                return cmd_type, answer[len(alias) :].strip()
-    return None, answer
+def handle_model_not_found():
+    """Handle case when no matching model is found"""
+    error_message("No matching matterport found. Please try again, to download a model use 'download [url|model_id]'.")
+    initializing()
+    return
 
 
 def initializing():
     global WORDS
-    print("-" * os.get_terminal_size().columns)
+    print_separator()
     downloads = load_model_data()
 
     print(f"To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
@@ -145,8 +198,9 @@ def initializing():
     print(f'To {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or name.')
     print(f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport.")
 
-    WORDS = list(["delete ", "rename ", "download "])
+    WORDS = [f"{cmd} " for cmds in COMMANDS.values() for cmd in cmds]
     keys = sorted(list(downloads.keys()))
+
     for i, key in enumerate(keys, 1):
         itemName = key
         WORDS.append(key)
@@ -154,47 +208,50 @@ def initializing():
             WORDS.append(downloads[key])
             itemName = f"{downloads[key]} ({itemName})"
         print(f"[{i}] {itemName}")
-    print("-" * os.get_terminal_size().columns)
 
+    print_separator()
     answer = input("input: ")
-
     command, arg = parse_command(answer)
 
     if command == "delete":
         model_id = getModelId(arg, keys, downloads)
         if not model_id:
-            print_colored("No matching matterport found. Please try again.", bcolors.FAIL)
-            initializing()
-            return
-        pInput = input(f'please enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or the title {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: ')
-        while not (pInput in [downloads[model_id], model_id] or pInput == "cancel"):
-            print_colored("You did not enter the right name or ID.", bcolors.FAIL)
-            pInput = input(f'Please try again (enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}')
+            return handle_model_not_found()
+
+        prompt = f'please enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or the title {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: '
+        while True:
+            pInput = input(prompt)
+            if pInput in [downloads[model_id], model_id, "cancel"]:
+                break
+            error_message("You did not enter the right name or ID.")
+            prompt = f'Please try again (enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}'
+
         if pInput != "cancel":
             path = os.path.join(get_downloads_path(), model_id)
             shutil.rmtree(path)
             print_colored("matterport successfully deleted", bcolors.OKGREEN)
+
     elif command == "rename":
         model_id = getModelId(arg, keys, downloads)
         if not model_id:
-            print_colored("No matching matterport found. Please try again.", bcolors.FAIL)
-            initializing()
-            return
+            return handle_model_not_found()
+
         new_name = input("please enter the new name for the matterport: ")
         if update_model_alias(model_id, new_name):
             print_colored("renaming successful", bcolors.OKGREEN)
         else:
-            print_colored("failed to rename matterport", bcolors.FAIL)
+            error_message("failed to rename matterport")
+
     elif command == "download":
         for url in arg.split(" "):
             download(url)
     else:
         model_id = getModelId(arg, keys, downloads)
+        if not model_id:
+            return handle_model_not_found()
         if model_id:
             print(f"opening {model_id}")
             subprocess.run([sys.executable, "matterport-dl.py", model_id, "127.0.0.1", "8080"])
-        else:
-            print_colored("Model not found or invalid command. To download, use 'download' followed by the URL or ID. To open a matterport, enter its number or name.", bcolors.FAIL)
 
     initializing()
 
@@ -202,26 +259,6 @@ def initializing():
 def find_matches(text, items):
     """Find items that start with the given text (case insensitive)"""
     return [item for item in items if item.lower().startswith(text.lower())]
-
-
-def getModelId(input, keys, downloads):
-    """Get a key from user input, either by index or name prefix match"""
-
-    try:
-        match = keys[int(input) - 1]
-    except (ValueError, IndexError):
-        matches = find_matches(input, keys)
-        if matches:
-            match = matches[0]
-        else:
-            for key in keys:
-                if downloads[key].lower().startswith(input.lower()):
-                    match = key
-                    break
-    if not match:
-        return None
-    print(f"Selecting {match} ({downloads[match]})")
-    return match
 
 
 def completer(text, state):
