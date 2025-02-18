@@ -87,6 +87,7 @@ class bcolors:
     OKGREEN = "\033[92m"
     WARNING = "\033[93m"
     FAIL = "\033[91m"
+    UNINMPORTANT = "\033[2m"
     ENDC = "\033[0m"
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
@@ -97,8 +98,8 @@ def initializing():
     downloads = load_converter_json()
 
     print(f"To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
-    print(f"To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter the web address or ID{bcolors.ENDC} of it instead.")
-    print(f'To download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}')
+    print(f'To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter {bcolors.BOLD}"download "{bcolors.ENDC} the web address or ID{bcolors.ENDC}')
+    print(f'\tTo download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}')
     print(f'To {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or name.')
     print(f'To {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or name.')
     print(f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport.")
@@ -109,12 +110,12 @@ def initializing():
     print("-" * os.get_terminal_size().columns)
 
     global WORDS
-    WORDS = [*keys, *["delete ", "rename "]]
+    WORDS = [*keys, *["delete ", "rename ", "download "]]
     answer = input("input: ")
 
-    rm_index = re.findall(r"delete (.*)", answer)
-    rn_index = re.findall(r"rename (.*)", answer)
-    dl_match = re.findall(r"dl (.*)", answer)
+    rm_index = re.findall(r"(?:del|rm|delete) (.*)", answer)
+    rn_index = re.findall(r"(?:rename|re|ren) (.*)", answer)
+    dl_match = re.findall(r"(?:dl|download) (.*)", answer)
 
     if answer.isnumeric():
         if int(answer) not in range(1, len(downloads) + 1):
@@ -160,21 +161,25 @@ def find_matches(text, items):
     return [item for item in items if item.lower().startswith(text.lower())]
 
 def getKey(input, keys):
+    match=""
     try:
-        return keys[int(input) - 1]
+        match = keys[int(input) - 1]
     except ValueError:
         matches = find_matches(input, keys)
         if matches:
-            return matches[0]
-        print_colored("No matching matterport found. Please try again.", bcolors.FAIL)
-        initializing()
+            match = matches[0]
+        else:
+            print_colored("No matching matterport found. Please try again.", bcolors.FAIL)
+            initializing()
+    print_colored(f"Selecting match: {match}", bcolors.UNINMPORTANT)
+    return match
 
 def completer(text, state):
     matches = find_matches(text, WORDS)
     return matches[state] if state < len(matches) else None
 
 
-WORDS = ["delete ", "rename "]
+WORDS = []
 readline.set_completer(completer)
 readline.parse_and_bind("tab: complete")
 
