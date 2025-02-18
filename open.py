@@ -8,6 +8,7 @@ import json
 import shutil
 import os
 import sys
+import readline
 
 
 def get_absolute_path(relative_path):
@@ -68,7 +69,7 @@ def download(url):
             name = re.findall(r"<title>(.*) - Matterport 3D Showcase</title>", content)[0]
         except IndexError:
             name = None
-        if name == None or len(name) == 0:
+        if name is None or len(name) == 0:
             name = input("please give the matterport a name: ")
         # initiating the download
         output = subprocess.run([sys.executable, "matterport-dl.py", url])
@@ -110,16 +111,16 @@ def initializing():
     answer = input("input: ")
     rm_index = re.findall(r"delete (.*)", answer)
     rn_index = re.findall(r"rename (.*)", answer)
-    dl_match = re.findall(r'dl (.*)', answer)
-    if answer.isnumeric() or answer in keys:
-        if answer in keys:
-            answer = keys.index(answer) + 1
-        elif answer not in range(0, len(downloads)):
-            print(f"{bcolors.BOLD}{bcolors.FAIL}please enter a number from 0 to {len(downloads)} to open the associated matterport{bcolors.ENDC}")
+    dl_match = re.findall(r"dl (.*)", answer)
+
+    if answer.isnumeric():
+        if int(answer) not in range(1, len(downloads) + 1):
+            print(f"{bcolors.BOLD}{bcolors.FAIL}please enter a number from 1 to {len(downloads)} to open the associated matterport{bcolors.ENDC}")
             initializing()
-        print("opening " + downloads[keys[int(answer) - 1]])
-        subprocess.run([sys.executable, "matterport-dl.py", downloads[keys[int(answer) - 1]], "127.0.0.1", "8080"])
-    # deleting matterport
+            return
+        key = keys[int(answer) - 1]
+        print("opening " + downloads[key])
+        subprocess.run([sys.executable, "matterport-dl.py", downloads[key], "127.0.0.1", "8080"])
     elif len(rm_index) == 1:
         key = getKey(rm_index[0], keys)
         pInput = input(f'please enter {bcolors.BOLD}"{key}"{bcolors.ENDC} or the ID {bcolors.BOLD}"{downloads[key]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: ')
@@ -130,21 +131,24 @@ def initializing():
             path = get_absolute_path("downloads/" + downloads[key])
             shutil.rmtree(path)
             delete(key)
-        initializing()
-    # renaming matterport
     elif len(rn_index) == 1:
         key = getKey(rn_index[0], keys)
         save(input("please enter the new name for the matterport: "), downloads[key])
         delete(key, alert=False)
         print(f"{bcolors.BOLD}{bcolors.OKGREEN}renaming successful{bcolors.ENDC}")
-        initializing()
-  # downloading matterport(s)
     elif len(dl_match) == 1:
         for url in dl_match[0].split(" "):
             download(url)
-        initializing()
     else:
-        print(f"{bcolors.BOLD}{bcolors.FAIL}Model not found or invalid command. To download, use 'dl' followed by the URL or ID. To open a matterport, enter its number or name.{bcolors.ENDC}")
+        # Find case-insensitive partial matches for the entered name
+        matches = [key for key in keys if key.lower().startswith(answer.lower())]
+        if matches:
+            key = matches[0]  # Take the first match
+            print("opening " + downloads[key])
+            subprocess.run([sys.executable, "matterport-dl.py", downloads[key], "127.0.0.1", "8080"])
+        else:
+            print(f"{bcolors.BOLD}{bcolors.FAIL}Model not found or invalid command. To download, use 'dl' followed by the URL or ID. To open a matterport, enter its number or name.{bcolors.ENDC}")
+
     initializing()
 
 
@@ -153,10 +157,12 @@ def getKey(input, keys):
     try:
         key = keys[int(input) - 1]
     except ValueError:
-        if input in keys:
-            key = input
+        # Find any keys that match the input case-insensitively and take first match
+        matches = [key for key in keys if key.lower().startswith(input.lower())]
+        if matches:
+            key = matches[0]
         else:
-            print(f"{bcolors.BOLD}{bcolors.FAIL}You did not type the name of the matterport correctly. Please try again.{bcolors.ENDC}")
+            print(f"{bcolors.BOLD}{bcolors.FAIL}No matching matterport found. Please try again.{bcolors.ENDC}")
             initializing()
     return key
 
