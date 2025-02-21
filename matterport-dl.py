@@ -480,7 +480,7 @@ async def downloadAssets(base, base_page_text):
     # following seem no more: "css/split.css", "headset-cardboard", "headset-quest", "NoteIcon",  "puck_256_red", "tagbg", "tagmask", "roboto-700-42_0", "pinIconDefault",
 
     # downloadFile("my.matterport.com/favicon.ico", "favicon.ico")
-    base_page_js_loads = re.findall(r"script src=[\"']([^\"']+[.]js)[\"']", base_page_text, flags=re.IGNORECASE)
+    base_page_js_loads = re.findall(r"script\s+(?:defer\s+)?src=[\"']([^\"']+[.]js)[\"']", base_page_text, flags=re.IGNORECASE)
 
     # now they use module imports as well like: import(importBase + 'js/runtime~showcase.69d7273003fd73b7a8f3.js'),
 
