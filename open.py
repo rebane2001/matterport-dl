@@ -21,7 +21,7 @@ def get_downloads_path():
 
 
 def load_model_data():
-    """Load all model data from run_args.json files in download directories"""
+    """Load all model data from run_args.json files in download directories, returning a dictionary of the model id to name/alias/title"""
     models = {}
     downloads_path = get_downloads_path()
     if not os.path.exists(downloads_path):
@@ -63,6 +63,32 @@ def load_model_data():
     return models
 
 
+def remove_alias_smylink(expected_owner_model_id, alias):
+    """Checks if in the downloads folder there is a sym link and pointing to expected_owner_model_id if so remove it otherwise we do nothing"""
+    downloads_path = get_downloads_path()
+    alias_path = os.path.join(downloads_path, alias)
+    if os.path.islink(alias_path):
+        target = os.readlink(alias_path)
+        if expected_owner_model_id.lower() in target.lower():
+            try:
+                os.remove(alias_path)
+                print_colored("Removed old alias symlink", bcolors.OKGREEN)
+            except OSError as e:
+                print_colored(f"Error removing symlink {alias}: {e}", bcolors.WARNING)
+
+def create_alias_smylink(model_id, alias):
+    """Create a symlink in the downloads folder pointing to the model_id"""
+    downloads_path = get_downloads_path()
+    alias_path = os.path.join(downloads_path, alias)
+    model_path = os.path.join(downloads_path, model_id)
+    if not os.path.exists(alias_path):
+        try:
+            os.symlink(model_path, alias_path)
+            print_colored(f"Created symlink {alias} pointing to {model_id}", bcolors.OKGREEN)
+        except OSError as e:
+            print_colored(f"Error creating symlink alias {alias}: {e}", bcolors.WARNING)
+
+
 def update_model_alias(model_id, new_title):
     """Update the title in run_args.json"""
     run_args_path = os.path.join(get_downloads_path(), model_id, "run_args.json")
@@ -70,7 +96,10 @@ def update_model_alias(model_id, new_title):
         try:
             with open(run_args_path, "r") as f:
                 data = json.load(f)
+            old_title = data["ALIAS"]
+            remove_alias_smylink(model_id, old_title)
             data["ALIAS"] = new_title
+            create_alias_smylink(model_id, new_title)
             with open(run_args_path, "w") as f:
                 json.dump(data, f, indent=2)
             return True
@@ -170,7 +199,7 @@ def getModelId(input_text, keys, downloads):
         print(f"Selecting {match} ({downloads[match]})")
         return match
 
-    # Try title match
+    # Try alias/title match against the start of the string
     for key in keys:
         if downloads[key].lower().startswith(input_text.lower()):
             print(f"Selecting {key} ({downloads[key]})")
@@ -191,7 +220,7 @@ def initializing():
     print_separator()
     downloads = load_model_data()
 
-    print(f"To {bcolors.BOLD}start{bcolors.ENDC} a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
+    print(f"To start/serve a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
     print(f'To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter "download "{bcolors.ENDC} followed by the web address or ID{bcolors.ENDC}')
     print(f'To download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}')
     print(f'To {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or name.')
@@ -199,7 +228,7 @@ def initializing():
     print(f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport.")
 
     WORDS = [f"{cmd} " for cmds in COMMANDS.values() for cmd in cmds]
-    keys = sorted(list(downloads.keys()))
+    keys = sorted(list(downloads.keys()), key=lambda k: downloads[k].lower())
 
     for i, key in enumerate(keys, 1):
         itemName = key
@@ -245,7 +274,7 @@ def initializing():
     elif command == "download":
         for url in arg.split(" "):
             download(url)
-    else:
+    else: # assume user wants to start/serve it so just make sure it exists
         model_id = getModelId(arg, keys, downloads)
         if not model_id:
             return handle_model_not_found()
