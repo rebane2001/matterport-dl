@@ -20,6 +20,38 @@ def get_downloads_path():
     return get_absolute_path("downloads")
 
 
+def load_model_json(model_id):
+    """Load JSON data from a model's run_args.json file, returning the data or an empty dictionary if not found"""
+    run_args_path = os.path.join(get_downloads_path(), model_id, "run_args.json")
+    if not os.path.exists(run_args_path):
+        print_colored(f"Warning: No run_args.json found for {model_id}", bcolors.WARNING)
+        return {}
+    try:
+        with open(run_args_path, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        print_colored(f"Error: Invalid JSON in run_args.json for model {model_id}", bcolors.WARNING)
+        return {}
+    except FileNotFoundError:
+        print_colored(f"Warning: No run_args.json found for {model_id}", bcolors.WARNING)
+        return {}
+    except Exception as e:
+        print_colored(f"Error reading run_args.json for model {model_id}: {str(e)}", bcolors.WARNING)
+        return {}
+
+
+def save_model_json(model_id, data):
+    """Save JSON data to a model's run_args.json file, returning True if successful, False otherwise"""
+    run_args_path = os.path.join(get_downloads_path(), model_id, "run_args.json")
+    try:
+        with open(run_args_path, "w") as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print_colored(f"Error saving run_args.json for model {model_id}: {str(e)}", bcolors.WARNING)
+        return False
+
+
 def load_model_data():
     """Load all model data from run_args.json files in download directories, returning a dictionary of the model id to name/alias/title"""
     models = {}
@@ -33,33 +65,18 @@ def load_model_data():
         if not os.path.isdir(model_path) or os.path.islink(model_path):
             continue
 
-        run_args_path = os.path.join(model_path, "run_args.json")
-        if not os.path.exists(run_args_path):
-            print_colored(f"Warning: No run_args.json found for {model_id}", bcolors.WARNING)
-            # Still include the model using ID as name
-            models[model_id] = model_id
-            continue
-
-        try:
-            with open(run_args_path, "r") as f:
-                data = json.load(f)
-                name = ""
-                if data.get("ALIAS"):
-                    name = data.get("ALIAS")
-                if data.get("TITLE"):
-                    if name:
-                        name += " - "
-                    name += data.get("TITLE")
-                # If no name was found, use the model ID
-                if not name:
-                    name = model_id
-                models[model_id] = name
-        except json.JSONDecodeError:
-            print_colored(f"Error: Invalid JSON in run_args.json for {model_id}", bcolors.WARNING)
-            models[model_id] = model_id
-        except Exception as e:
-            print_colored(f"Error reading run_args.json for {model_id}: {str(e)}", bcolors.WARNING)
-            models[model_id] = model_id
+        data = load_model_json(model_id)
+        name = ""
+        if data.get("ALIAS"):
+            name = data.get("ALIAS")
+        if data.get("TITLE"):
+            if name:
+                name += " - "
+            name += data.get("TITLE")
+        # If no name was found, use the model ID
+        if not name:
+            name = model_id
+        models[model_id] = name
     return models
 
 
@@ -90,22 +107,15 @@ def create_alias_smylink(model_id, alias):
 
 
 def update_model_alias(model_id, new_title):
-    """Update the title in run_args.json"""
-    run_args_path = os.path.join(get_downloads_path(), model_id, "run_args.json")
-    if os.path.exists(run_args_path):
-        try:
-            with open(run_args_path, "r") as f:
-                data = json.load(f)
-            old_title = data["ALIAS"]
-            remove_alias_smylink(model_id, old_title)
-            data["ALIAS"] = new_title
-            create_alias_smylink(model_id, new_title)
-            with open(run_args_path, "w") as f:
-                json.dump(data, f, indent=2)
-            return True
-        except:
-            print_colored(f"Error updating run_args.json for {model_id}", bcolors.WARNING)
-            return False
+    """Update the title in run_args.json and create a symlink with the new title"""
+    data = load_model_json(model_id)
+    old_title = data.get("ALIAS", "")
+    if old_title:
+        remove_alias_smylink(model_id, old_title)
+    data["ALIAS"] = new_title
+    if save_model_json(model_id, data):
+        create_alias_smylink(model_id, new_title)
+        return True
     return False
 
 
@@ -257,6 +267,10 @@ def initializing():
 
         if pInput != "cancel":
             path = os.path.join(get_downloads_path(), model_id)
+            model_data = load_model_json(model_id)
+            if model_data.get("ALIAS"):
+                remove_alias_smylink(model_id, model_data["ALIAS"])
+
             shutil.rmtree(path)
             print_colored("matterport successfully deleted", bcolors.OKGREEN)
 
