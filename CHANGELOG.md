@@ -1,3 +1,6 @@
+# 2025-03-22
+- Major new interactive terminal UI mostly thanks to @AdiWeit. Allows downloading multiple urls at once, extracting matterport embeds, renaming, deleting, and launching models from the interface
+
 # 2025-01-24
 - Added embedded attachment / 'matterport tags' downloading for things like image points
 

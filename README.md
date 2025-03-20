@@ -1,5 +1,5 @@
 # matterport-dl
-A tool to download/archive [Matterport](https://matterport.com) digital twin virtual tours.  Supports most matterport virtual tour links ( ie https://my.matterport.com/show/?m=roWLLMMmPL8 ). This project is not in any way associated with or supported by Matterport Inc in any way all relevant trademarks and rights are reserve Matterport Inc. 
+A tool to download/archive [Matterport](https://matterport.com) digital twin virtual tours.  Supports most matterport virtual tour links ( ie https://my.matterport.com/show/?m=roWLLMMmPL8 ). This project is not in any way associated with or supported by Matterport Inc in any way all relevant trademarks and rights are reserve Matterport Inc.
 
 Currently matterport-dl.py is primarily maintained by [@mitchcapper](https://github.com/mitchcapper).
 
@@ -27,11 +27,27 @@ While it is largely feature complete in its ability to preserve an entire digita
 # Usage
 
 1. Install Python 3.12 or higher.
-2. Download the files from this repository (click Code button near upper right and click download zip). 
+2. Download the files from this repository (click Code button near upper right and click download zip).
 3. Extract these files to a local folder.
 4. At the root of the folder run `pip install -r requirements.txt`
-5. Archive a virtual tour by running `matterport-dl.py [url_or_page_id]`, you may need to use `python3 matterport-dl.py ...` or `python matterport-dl.py ...` instead.
-6. Revisit an archived virtual tour by running `matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080` and visiting http://127.0.0.1:8080 in a browser.
+5. Donwload a virtual tour by running `matterport-dl.py [url_or_page_id]`, you may need to use `python3 matterport-dl.py ...` or `python matterport-dl.py ...` instead.
+6. Serve a downloaded virtual tour by running `matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080` and visiting http://127.0.0.1:8080 in a browser.
+
+## Interactive Terminal Interface
+While this script was originally a static command line tool it now has an embedded interactive terminal interface.  You can launch this interface by running matterport-dl.py without specifying a model or url to download/serve.  The interface supports downloading one or more models at once, renaming, deleting existing models and launching them.  Any command that requires a specific model (ie rename) you can either provide the model ID or the model alias (if it has one).  You can also use tab autocomplete on the id/name. The interface looks like this:
+```
+------------------------------------------------------------------------------------------------------
+To start/serve a matterport, please enter the number or the name of the matterport in the list below.
+To download a matterport, enter "download " followed by the web address or ID
+To download multiple matterports, you can enter multiple web addresses separated by " "
+To delete a matterport, enter "delete " followed by the associated number or name.
+To rename a matterport, enter "rename " followed by the associated number or name.
+You can press tab to auto-complete names of the matterport.
+[1] 24-Hour Laundry Room (EGxFGTFyC9N)
+[2] My Test One (ZPAShFyC9NF)
+[3] Yours (AOSDNOQW2)
+------------------------------------------------------------------------------------------------------
+```
 
 ## CLI Options
 Any option below can have a no prefix added (or removed if already has) to invert the option,  ie `--no-proxy` disables a proxy if one was enabled.  `--no-advanced-download` disables the default enabled advanced download.
@@ -83,6 +99,6 @@ There is effort put into maintaining compatibility with prior downloaded models 
 
 * As improvements are made to the script you can often upgrade old archives but simply running the script again.  Any existing files downloaded are generally skipped so it will run much faster.  This is not a guarantee so backup your important archives first.
 
-* As matterport changes their code things will likely need to be updated in the script. A good place to start is looking at the server.log file for any lines that say "404 error" in them, these are likely additional files we need to download for the archive to work.  
+* As matterport changes their code things will likely need to be updated in the script. A good place to start is looking at the server.log file for any lines that say "404 error" in them, these are likely additional files we need to download for the archive to work.
 
 # [Reddit thread](https://www.reddit.com/r/DataHoarder/comments/nycjj4/release_matterportdl_a_tool_for_archiving/)

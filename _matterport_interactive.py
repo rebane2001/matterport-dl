@@ -93,6 +93,7 @@ def remove_alias_smylink(expected_owner_model_id, alias):
             except OSError as e:
                 print_colored(f"Error removing symlink {alias}: {e}", bcolors.WARNING)
 
+
 def create_alias_smylink(model_id, alias):
     """Create a symlink in the downloads folder pointing to the model_id"""
     downloads_path = get_downloads_path()
@@ -231,7 +232,6 @@ def interactiveManagerGetToServe(matterportArgs):
     readline.set_completer(completer)
     readline.parse_and_bind("tab: complete")
 
-
     while True:
         print_separator()
         downloads = load_model_data()
@@ -296,7 +296,7 @@ def interactiveManagerGetToServe(matterportArgs):
         elif command == "download":
             for url in arg.split(" "):
                 download(matterportArgs, url)
-        else: # assume user wants to start/serve it so just make sure it exists
+        else:  # assume user wants to start/serve it so just make sure it exists
             model_id = getModelId(arg, keys, downloads)
             if not model_id:
                 handle_model_not_found()
