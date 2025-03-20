@@ -1801,8 +1801,10 @@ if __name__ == "__main__":
         if not isExplicitHelpCLI and sys.stdin.isatty():
             try:
                 sys.path.insert(0, str(BASE_MATTERPORTDL_DIR))
-                consoleLog("Running in interactive mode if you want usage use --help arg")
-                from open import interactiveManagerGetToServe
+                from _matterport_interactive import interactiveManagerGetToServe, print_colored, bcolors
+                print("Running in interactive mode if you want usage run: ",end="")
+                print_colored("matterport-dl.py --help", bcolors.WARNING)
+
                 pageId = interactiveManagerGetToServe(subProcessArgs)
 
                 if pageId:
