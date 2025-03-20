@@ -1762,6 +1762,7 @@ if __name__ == "__main__":
     argPos = 1
     isServerRun = False
     isDownloadRun = False
+    subProcessArgs = CLA.orig_args.copy() #args we give the interactive UI minus ip and port as it only uses them for downloads
     if len(sys.argv) > argPos:
         pageIdOrIp = sys.argv[argPos]
         # Check if pageIdOrIp is an IP address
@@ -1774,14 +1775,16 @@ if __name__ == "__main__":
         if len(sys.argv) == argPos+2: #ip and port left, note if it was an IP above we didn't increment argPos
             isServerRun = pageId != ""
             bindIp = sys.argv[argPos]
+            subProcessArgs.remove(bindIp)
             argPos += 1
-            bindPort = int(sys.argv[argPos])
+            bindPort = sys.argv[argPos]
+            subProcessArgs.remove(bindPort)
             argPos += 1
+            bindPort = int(bindPort)
 
-    print (f"Bind ip: {bindIp} port: {bindPort}")
     if not os.path.exists(os.path.join(baseDir, pageId)) and os.path.exists(pageId) and isServerRun:  # allow old rooted pages to still be served
         baseDir = "./"
-    else:
+    elif isServerRun or isDownloadRun:
         makeDirs(baseDir)
         os.chdir(baseDir)
 
@@ -1800,7 +1803,7 @@ if __name__ == "__main__":
                 sys.path.insert(0, str(BASE_MATTERPORTDL_DIR))
                 consoleLog("Running in interactive mode if you want usage use --help arg")
                 from open import interactiveManagerGetToServe
-                pageId = interactiveManagerGetToServe()
+                pageId = interactiveManagerGetToServe(subProcessArgs)
 
                 if pageId:
                     isServerRun = True
@@ -1808,8 +1811,7 @@ if __name__ == "__main__":
 
             except ImportError:
                 print("Error: Could not import interactiveManagerGetToServe from open.py")
-            except Exception as e:
-                print(f"Error during interactive mode: {e}")
+
         else:
             print("Usage:\nmatterport-dl.py [url_or_page_id] -- Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 -- Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
             print(CLA.getUsageStr())
