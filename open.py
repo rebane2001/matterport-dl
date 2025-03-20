@@ -166,7 +166,7 @@ def parse_command(answer):
     return None, answer
 
 
-def download(url):
+def download(matterportArgs, url):
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36"}
 
     if "https://" in url:
@@ -183,7 +183,8 @@ def download(url):
         urls = [url]
 
     for url in urls:
-        output = subprocess.run([sys.executable, "matterport-dl.py", url])
+        fullArgs = [sys.executable] + matterportArgs + [url]
+        output = subprocess.run(fullArgs)
         if output.returncode == 1:
             print_colored('Download failed! Make sure you type in a valid web address or ID. The web address must contain "https://" Please consider that the downloader itself might be broken.', bcolors.FAIL)
         print_separator()
@@ -224,7 +225,7 @@ def handle_model_not_found():
     return False
 
 
-def interactiveManagerGetToServe():
+def interactiveManagerGetToServe(matterportArgs):
     """Allows the user to interactively select a matterport to serve, download, rename, or delete.  If the user wants to serve then this function returns the model id to serve"""
     global WORDS
     readline.set_completer(completer)
@@ -294,7 +295,7 @@ def interactiveManagerGetToServe():
 
         elif command == "download":
             for url in arg.split(" "):
-                download(url)
+                download(matterportArgs, url)
         else: # assume user wants to start/serve it so just make sure it exists
             model_id = getModelId(arg, keys, downloads)
             if not model_id:
