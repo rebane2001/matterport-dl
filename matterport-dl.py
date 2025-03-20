@@ -1453,6 +1453,37 @@ def RegisterWindowsBrowsers():
             name = name.replace("Google ", "").replace("Mozilla ", "").replace("Microsoft ", "")  # emulate stock names
             webbrowser.register(name, None, webbrowser.GenericBrowser(cmd))
 
+def startServer(baseDir, pageId, browserLaunch, bindAddress, bindPort):
+    global SERVED_BASE_URL
+    twinDir = getPageId(pageId)
+    if not os.path.exists(twinDir):
+        fullPath = os.path.abspath(twinDir)
+        relativeToScriptDir = os.path.join(BASE_MATTERPORTDL_DIR, baseDir, twinDir)
+        if os.path.exists(relativeToScriptDir):
+            os.chdir(relativeToScriptDir)
+        else:
+            raise Exception(f"Unable to change to download directory for twin of: {fullPath} or {os.path.abspath(relativeToScriptDir)} make sure the download is there")
+    else:
+        os.chdir(twinDir)
+    try:
+        logging.basicConfig(filename="server.log", filemode="w", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        logging.basicConfig(filename="server.log", filemode="w", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    if CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
+        logging.getLogger().addHandler(logging.StreamHandler())
+
+    logging.info(f"Server starting up {sys_info()}")
+    SERVED_BASE_URL = url = f"http://{bindAddress}:{bindPort}"
+    print("View in browser: " + url)
+    httpd = HTTPServer((bindAddress, bindPort), OurSimpleHTTPRequestHandler)
+    if browserLaunch:
+        print(f"Going to try and launch browser type: {browserLaunch}")
+        import webbrowser
+        if sys.platform == "win32":
+            RegisterWindowsBrowsers()
+        webbrowser.get(browserLaunch).open_new_tab(url)
+    httpd.serve_forever()
 
 class KeyHandler:
     # not actually used currently
@@ -1726,10 +1757,28 @@ if __name__ == "__main__":
 
     SetupSession(CLA.getCommandLineArg(CommandLineArg.PROXY))
     pageId = ""
-    if len(sys.argv) > 1:
-        pageId = getPageId(sys.argv[1])
+    bindIp="127.0.0.1"
+    bindPort=8080
+    argPos = 1
+    isServerRun = False
+    isDownloadRun = False
+    if len(sys.argv) > argPos:
+        pageIdOrIp = sys.argv[argPos]
+        # Check if pageIdOrIp is an IP address
+        ip_pattern = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+        if not ip_pattern.match(pageIdOrIp):
+            pageId = getPageId(pageIdOrIp)
+            argPos += 1
+            if len(sys.argv) == argPos: #if no more args its a download run
+                isDownloadRun = True
+        if len(sys.argv) == argPos+2: #ip and port left, note if it was an IP above we didn't increment argPos
+            isServerRun = pageId != ""
+            bindIp = sys.argv[argPos]
+            argPos += 1
+            bindPort = int(sys.argv[argPos])
+            argPos += 1
 
-    isServerRun = len(sys.argv) == 4
+    print (f"Bind ip: {bindIp} port: {bindPort}")
     if not os.path.exists(os.path.join(baseDir, pageId)) and os.path.exists(pageId) and isServerRun:  # allow old rooted pages to still be served
         baseDir = "./"
     else:
@@ -1743,45 +1792,35 @@ if __name__ == "__main__":
             CLA.parseArgs()
         except:
             pass
+    isExplicitHelpCLI = CLA.getCommandLineArg(CommandLineArg.HELP) or CLA.getCommandLineArg(CommandLineArg.ADV_HELP)
+    if isExplicitHelpCLI or (not isServerRun and not isDownloadRun):
+        consoleLog(sys_info())
+        if not isExplicitHelpCLI and sys.stdin.isatty():
+            try:
+                sys.path.insert(0, str(BASE_MATTERPORTDL_DIR))
+                consoleLog("Running in interactive mode if you want usage use --help arg")
+                from open import interactiveManagerGetToServe
+                pageId = interactiveManagerGetToServe()
 
-    if len(sys.argv) == 2 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
+                if pageId:
+                    isServerRun = True
+
+
+            except ImportError:
+                print("Error: Could not import interactiveManagerGetToServe from open.py")
+            except Exception as e:
+                print(f"Error during interactive mode: {e}")
+        else:
+            print("Usage:\nmatterport-dl.py [url_or_page_id] -- Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 -- Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
+            print(CLA.getUsageStr())
+            print("\tServing options:")
+            print(CLA.getUsageStr(forServerNotDownload=True))
+            print("\tAny option can have a no prefix added (or removed if already has) to invert the option,  ie --no-proxy disables a proxy if one was enabled.  --no-advanced-download disables the default enabled advanced download.")
+            sys.exit(1)
+
+    if isDownloadRun:
         asyncio.run(initiateDownload(pageId))
 
-    elif len(sys.argv) == 4 and not CLA.getCommandLineArg(CommandLineArg.HELP) and not CLA.getCommandLineArg(CommandLineArg.ADV_HELP):
-        twinDir = getPageId(pageId)
-        if not os.path.exists(twinDir):
-            fullPath = os.path.abspath(twinDir)
-            relativeToScriptDir = os.path.join(BASE_MATTERPORTDL_DIR, baseDir, twinDir)
-            if os.path.exists(relativeToScriptDir):
-                os.chdir(relativeToScriptDir)
-            else:
-                raise Exception(f"Unable to change to download directory for twin of: {fullPath} or {os.path.abspath(relativeToScriptDir)} make sure the download is there")
-        else:
-            os.chdir(twinDir)
-        try:
-            logging.basicConfig(filename="server.log", filemode="w", encoding="utf-8", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            logging.basicConfig(filename="server.log", filemode="w", level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    if isServerRun:
+        startServer(baseDir, pageId, browserLaunch, bindIp, bindPort)
 
-        if CLA.getCommandLineArg(CommandLineArg.CONSOLE_LOG):
-            logging.getLogger().addHandler(logging.StreamHandler())
-
-        logging.info(f"Server starting up {sys_info()}")
-        SERVED_BASE_URL = url = "http://" + sys.argv[2] + ":" + sys.argv[3]
-        print("View in browser: " + url)
-        httpd = HTTPServer((sys.argv[2], int(sys.argv[3])), OurSimpleHTTPRequestHandler)
-        if browserLaunch:
-            print(f"Going to try and launch browser type: {browserLaunch}")
-            import webbrowser
-
-            if sys.platform == "win32":
-                RegisterWindowsBrowsers()
-            webbrowser.get(browserLaunch).open_new_tab(url)
-        httpd.serve_forever()
-    else:
-        consoleLog(sys_info())
-        print("Usage:\nmatterport-dl.py [url_or_page_id] -- Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 -- Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
-        print(CLA.getUsageStr())
-        print("\tServing options:")
-        print(CLA.getUsageStr(forServerNotDownload=True))
-        print("\tAny option can have a no prefix added (or removed if already has) to invert the option,  ie --no-proxy disables a proxy if one was enabled.  --no-advanced-download disables the default enabled advanced download.")
