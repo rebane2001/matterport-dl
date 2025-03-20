@@ -1815,7 +1815,7 @@ if __name__ == "__main__":
                 print("Error: Could not import interactiveManagerGetToServe from open.py")
 
         else:
-            print("Usage:\nmatterport-dl.py [url_or_page_id] -- Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 -- Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
+            print("Usage:\nmatterport-dl.py -- Interactive terminal UI mode, any options below will still be passed to any downloads or server starts\nmatterport-dl.py [url_or_page_id] -- Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 -- Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
             print(CLA.getUsageStr())
             print("\tServing options:")
             print(CLA.getUsageStr(forServerNotDownload=True))
