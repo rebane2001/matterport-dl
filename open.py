@@ -221,82 +221,87 @@ def getModelId(input_text, keys, downloads):
 def handle_model_not_found():
     """Handle case when no matching model is found"""
     error_message("No matching matterport found. Please try again, to download a model use 'download [url|model_id]'.")
-    initializing()
-    return
+    return False
 
 
-def initializing():
+def interactiveManagerGetToServe():
+    """Allows the user to interactively select a matterport to serve, download, rename, or delete.  If the user wants to serve then this function returns the model id to serve"""
     global WORDS
-    print_separator()
-    downloads = load_model_data()
+    readline.set_completer(completer)
+    readline.parse_and_bind("tab: complete")
 
-    print(f"To start/serve a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
-    print(f'To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter "download "{bcolors.ENDC} followed by the web address or ID{bcolors.ENDC}')
-    print(f'To download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}')
-    print(f'To {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or name.')
-    print(f'To {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or name.')
-    print(f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport.")
 
-    WORDS = [f"{cmd} " for cmds in COMMANDS.values() for cmd in cmds]
-    keys = sorted(list(downloads.keys()), key=lambda k: downloads[k].lower())
+    while True:
+        print_separator()
+        downloads = load_model_data()
 
-    for i, key in enumerate(keys, 1):
-        itemName = key
-        WORDS.append(key)
-        if downloads[key]:
-            WORDS.append(downloads[key])
-            itemName = f"{downloads[key]} ({itemName})"
-        print(f"[{i}] {itemName}")
+        print(f"To start/serve a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
+        print(f'To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter "download "{bcolors.ENDC} followed by the web address or ID{bcolors.ENDC}')
+        print(f'To download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}')
+        print(f'To {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or name.')
+        print(f'To {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or name.')
+        print(f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport.")
 
-    print_separator()
-    answer = input("input: ")
-    command, arg = parse_command(answer)
+        WORDS = [f"{cmd} " for cmds in COMMANDS.values() for cmd in cmds]
+        keys = sorted(list(downloads.keys()), key=lambda k: downloads[k].lower())
 
-    if command == "delete":
-        model_id = getModelId(arg, keys, downloads)
-        if not model_id:
-            return handle_model_not_found()
+        for i, key in enumerate(keys, 1):
+            itemName = key
+            WORDS.append(key)
+            if downloads[key]:
+                WORDS.append(downloads[key])
+                itemName = f"{downloads[key]} ({itemName})"
+            print(f"[{i}] {itemName}")
 
-        prompt = f'please enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or the title {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: '
-        while True:
-            pInput = input(prompt)
-            if pInput in [downloads[model_id], model_id, "cancel"]:
-                break
-            error_message("You did not enter the right name or ID.")
-            prompt = f'Please try again (enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}'
+        print_separator()
+        answer = input("input: ")
+        command, arg = parse_command(answer)
 
-        if pInput != "cancel":
-            path = os.path.join(get_downloads_path(), model_id)
-            model_data = load_model_json(model_id)
-            if model_data.get("ALIAS"):
-                remove_alias_smylink(model_id, model_data["ALIAS"])
+        if command == "delete":
+            model_id = getModelId(arg, keys, downloads)
+            if not model_id:
+                handle_model_not_found()
+                continue
 
-            shutil.rmtree(path)
-            print_colored("matterport successfully deleted", bcolors.OKGREEN)
+            prompt = f'please enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or the title {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC} to confirm the {bcolors.BOLD}{bcolors.FAIL}deletion{bcolors.ENDC} of the matterport: '
+            while True:
+                pInput = input(prompt)
+                if pInput in [downloads[model_id], model_id, "cancel"]:
+                    break
+                error_message("You did not enter the right name or ID.")
+                prompt = f'Please try again (enter {bcolors.BOLD}"{model_id}"{bcolors.ENDC} or {bcolors.BOLD}"{downloads[model_id]}"{bcolors.ENDC}) or enter {bcolors.BOLD}"cancel"{bcolors.ENDC} to cancel the {bcolors.FAIL}{bcolors.BOLD}deletion: {bcolors.ENDC}'
 
-    elif command == "rename":
-        model_id = getModelId(arg, keys, downloads)
-        if not model_id:
-            return handle_model_not_found()
+            if pInput != "cancel":
+                path = os.path.join(get_downloads_path(), model_id)
+                model_data = load_model_json(model_id)
+                if model_data.get("ALIAS"):
+                    remove_alias_smylink(model_id, model_data["ALIAS"])
 
-        new_name = input("please enter the new name for the matterport: ")
-        if update_model_alias(model_id, new_name):
-            print_colored("renaming successful", bcolors.OKGREEN)
-        else:
-            error_message("failed to rename matterport")
+                shutil.rmtree(path)
+                print_colored("matterport successfully deleted", bcolors.OKGREEN)
 
-    elif command == "download":
-        for url in arg.split(" "):
-            download(url)
-    else: # assume user wants to start/serve it so just make sure it exists
-        model_id = getModelId(arg, keys, downloads)
-        if not model_id:
-            return handle_model_not_found()
-        if model_id:
-            print(f"opening {model_id}")
-            subprocess.run([sys.executable, "matterport-dl.py", model_id, "127.0.0.1", "8080"])
+        elif command == "rename":
+            model_id = getModelId(arg, keys, downloads)
+            if not model_id:
+                handle_model_not_found()
+                continue
 
-    initializing()
+            new_name = input("please enter the new name for the matterport: ")
+            if update_model_alias(model_id, new_name):
+                print_colored("renaming successful", bcolors.OKGREEN)
+            else:
+                error_message("failed to rename matterport")
+
+        elif command == "download":
+            for url in arg.split(" "):
+                download(url)
+        else: # assume user wants to start/serve it so just make sure it exists
+            model_id = getModelId(arg, keys, downloads)
+            if not model_id:
+                handle_model_not_found()
+                continue
+            if model_id:
+                return model_id
 
 
 def find_matches(text, items):
@@ -310,7 +315,3 @@ def completer(text, state):
 
 
 WORDS = []
-readline.set_completer(completer)
-readline.parse_and_bind("tab: complete")
-
-initializing()
