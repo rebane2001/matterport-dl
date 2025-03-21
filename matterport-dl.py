@@ -1806,7 +1806,7 @@ if __name__ == "__main__":
                 print("Running in interactive mode.\n\tIf you instead wanted command line usage start this script with: ",end="")
                 print_colored("matterport-dl.py --help", bcolors.WARNING)
 
-                pageId = interactiveManagerGetToServe(subProcessArgs)
+                pageId = interactiveManagerGetToServe(baseDir, subProcessArgs)
 
                 if pageId:
                     isServerRun = True
