@@ -156,7 +156,7 @@ def getVariants():
     # to be smart we should be using the GetShowcaseSweeps file and data.model.locations[4].pano.resolutions  to determine if we should be trying 2k or 4k
     depths = ["512", "1k", "2k"]
     if SWEEP_DO_4K:
-        depths.append("4K")
+        depths.append("4k")
     for depth in range(len(depths)):
         z = depths[depth]
         for x in range(2**depth):
@@ -1118,6 +1118,7 @@ async def AdvancedAssetDownload(base_page_text: str):
 
         # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
         # now: getsweeps graph data: data.model.locations
+        resolutionDetectionWarning=""
         do4K = len(base_node["locations"]) == 0  # by default only do 4k if we have no locations data to check
         for location in base_node["locations"]:
             if "4k" in location["pano"]["resolutions"]:
@@ -1128,9 +1129,11 @@ async def AdvancedAssetDownload(base_page_text: str):
             for skybox in location["pano"]["skyboxes"]:
                 if skybox["status"] == "locked":  # not sure why some models have 4k but then locked skyboxes at that resolution.  The normal skybox key also with 403  trying to access the 4ks.  We can use the main key to access the urls but it just gives a 404
                     if skybox["resolution"] == "4k":
-                        do4K = False
+                        # do4K = False
+                        if not resolutionDetectionWarning:
+                            resolutionDetectionWarning = "Found 4k resolution locked for a skybox, but this doesn't seem to be a problem any more"
                     elif CLA.getCommandLineArg(CommandLineArg.DEBUG):
-                        raise Exception("Found non 4k resolution lcoekd for a skybox? Curious if actual download for it would 403...")
+                        resolutionDetectionWarning = "Found non 4k resolution locked for a skybox? Curious if actual download for it will 403..."
                 try:
                     for face in range(6):
                         skyboxUrlTemplate = skybox["urlTemplate"].replace("<face>", f"{face}")
@@ -1138,6 +1141,8 @@ async def AdvancedAssetDownload(base_page_text: str):
                 except:
                     pass
         SWEEP_DO_4K = do4K
+        if resolutionDetectionWarning:
+            consoleDebugLog(resolutionDetectionWarning)
         consoleLog("Going to download tileset 3d asset models")
         # Download Tilesets
         # now: getmodeldetails: data.model.assets.tilesets
