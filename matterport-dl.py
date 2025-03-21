@@ -232,7 +232,7 @@ async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, 
         logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId)
     except Exception as ex:
         logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId, ex)
-        raise Exception(f"Request error for url: {url} ({type}) that would output to: {file}") from ex
+        raise Exception(f"Request error for url: {url} ({type}) that would output to: {file} of: {ex}") from ex #str(ex) only is really doing the message not the entire cert  but we want the general error msg
 
 
 async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
@@ -317,7 +317,7 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
                             logUrlDownloadFinish(type, file, url2, "", shouldExist, reqId, err2, True)
                             pass
             logUrlDownloadFinish(type, file, url, "", shouldExist, reqId, err)
-            raise Exception(f"Request error for url: {url} ({type}) that would output to: {file}") from err
+            raise Exception(f"Request error for url: {url} ({type}) that would output to: {file} of: {err}") from err
 
 
 def validUntilFix(text):
@@ -877,7 +877,7 @@ async def downloadCapture(pageid):
 
     except Exception as error:
         if "certificate verify failed" in str(error) or "SSL certificate problem" in str(error):
-            raise TypeError(f"Error: {str(error)}. Have you tried running the Install Certificates.command (or similar) file in the python folder to install the normal root certs?") from error
+            raise TypeError(f"Error: {str(error)}. Have you tried running the Install Certificates.command (or similar) file in the python folder to install the normal root certs? If you are using a proxy without that cert installed in the python certificate library you may need to use: --no-verify-ssl") from error
         else:
             raise TypeError("First request error") from error
 
@@ -955,7 +955,7 @@ async def downloadCapture(pageid):
     await downloadAttachments()
     open("api/v1/event", "a").close()
     if CLA.getCommandLineArg(CommandLineArg.MAIN_ASSET_DOWNLOAD):
-        consoleLog("Downloading primary model assets...")
+        consoleLog(f"Downloading primary model assets has 4k: {SWEEP_DO_4K}...")
         await downloadMainAssets(pageid, accessurl)
     os.chdir(THIS_MODEL_ROOT_DIR)
     generatedCrops = 0
@@ -1081,7 +1081,7 @@ async def AdvancedAssetDownload(base_page_text: str):
         if not base_node:
             consoleLog("Not sure data query GetModelDetails worked we didn't get json back as expected, generally we don't need it for the dl run as we use embedded cache", logging.info)
             base_node = base_cache_node
-        if "locations" not in base_node:  # the query doesnt get locations back but the cahce does have it
+        if "locations" not in base_node:  # the query doesnt get locations back but the cache does have it, this is expected true
             base_node["locations"] = base_cache_node["locations"]
 
         if MODEL_IS_DEFURNISHED:
