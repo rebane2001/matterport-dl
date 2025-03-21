@@ -10,14 +10,11 @@ import os
 import sys
 import readline
 
-
-def get_absolute_path(relative_path):
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(script_directory, relative_path)
-
+DOWNLOAD_DIR="downloads"
 
 def get_downloads_path():
-    return get_absolute_path("downloads")
+    global DOWNLOAD_DIR
+    return DOWNLOAD_DIR
 
 
 def load_model_json(model_id):
@@ -226,9 +223,10 @@ def handle_model_not_found():
     return False
 
 
-def interactiveManagerGetToServe(matterportArgs):
+def interactiveManagerGetToServe(downloadDir, matterportArgs):
     """Allows the user to interactively select a matterport to serve, download, rename, or delete.  If the user wants to serve then this function returns the model id to serve"""
-    global WORDS
+    global WORDS, DOWNLOAD_DIR
+    DOWNLOAD_DIR = downloadDir
     readline.set_completer(completer)
     readline.parse_and_bind("tab: complete")
 
