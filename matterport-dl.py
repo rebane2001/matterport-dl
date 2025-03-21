@@ -920,6 +920,7 @@ async def downloadCapture(pageid):
 
     content = validUntilFix(content)
     content = content.replace("<head>", f"<head><script>{injectedjs}</script>{proxyAdd}")
+    content = content.replace('from "https://static.matterport.com', 'from ".') # fix the direct code import they added
     with open(getModifiedName("index.html"), "w", encoding="UTF-8") as f:
         f.write(content)
 
