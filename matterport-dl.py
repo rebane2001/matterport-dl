@@ -1541,7 +1541,7 @@ class KeyHandler:
         toSort = []
         for key in KeyHandler.KNOWN_ACCESS_KEYS:
             keyDesc = KeyHandler.KNOWN_ACCESS_KEYS[key].strip()
-            outStr = f"T {key.split('-')[-1]}: {keyDesc} -- {key}"
+            outStr = f"T {key.split('-')[-1]}: {keyDesc} - {key}"
             toSort.append(outStr)
         toSort.sort()
         DebugSaveFile("keys.txt", "\n".join(toSort))
@@ -1689,7 +1689,7 @@ class CLA:
 
             for _ in range(indent):
                 ret += "\t"
-            ret += f"--{noprefix}{arg.argConsoleName()} {arg.itemValueHelpDisplay} -- {desc}\n"
+            ret += f"--{noprefix}{arg.argConsoleName()} {arg.itemValueHelpDisplay} - {desc}\n"
         return ret.rstrip()
 
     @staticmethod
@@ -1802,7 +1802,7 @@ if __name__ == "__main__":
             try:
                 sys.path.insert(0, str(BASE_MATTERPORTDL_DIR))
                 from _matterport_interactive import interactiveManagerGetToServe, print_colored, bcolors
-                print("Running in interactive mode if you want usage run: ",end="")
+                print("Running in interactive mode.\n\tIf you instead wanted command line usage start this script with: ",end="")
                 print_colored("matterport-dl.py --help", bcolors.WARNING)
 
                 pageId = interactiveManagerGetToServe(subProcessArgs)
@@ -1812,10 +1812,10 @@ if __name__ == "__main__":
 
 
             except ImportError:
-                print("Error: Could not import interactiveManagerGetToServe from open.py")
+                print("Error: Could not import interactive start from _matterport_interactive.py")
 
         else:
-            print("Usage:\nmatterport-dl.py -- Interactive terminal UI mode, any options below will still be passed to any downloads or server starts\nmatterport-dl.py [url_or_page_id] -- Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 -- Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
+            print("Usage:\nmatterport-dl.py - Interactive terminal UI mode, any options below will still be passed to any downloads or server starts\nmatterport-dl.py [url_or_page_id] - Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 - Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
             print(CLA.getUsageStr())
             print("\tServing options:")
             print(CLA.getUsageStr(forServerNotDownload=True))
