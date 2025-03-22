@@ -252,8 +252,15 @@ def interactiveManagerGetToServe(downloadDir, matterportArgs):
                 itemName = f"{downloads[key]} ({itemName})"
             print(f"[{i}] {itemName}")
 
+        if sys.platform != "win32":
+            print(f"{bcolors.BOLD}Ctrl-D{bcolors.ENDC} to {bcolors.BOLD}exit{bcolors.ENDC}.")
+
         print_separator()
-        answer = input("input: ")
+        try:
+            answer = input("input: ")
+        except EOFError:  # ^D to exit (POSIX-based)
+            print()
+            sys.exit(0)
         command, arg = parse_command(answer)
 
         if command == "delete":
