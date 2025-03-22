@@ -842,7 +842,7 @@ async def downloadCapture(pageid):
         os.symlink(pageid, alias)
     THIS_MODEL_ROOT_DIR = os.path.abspath(pageid)
     os.chdir(THIS_MODEL_ROOT_DIR)
-    ROOT_FILE_COPY = ["JSNetProxy.js", "matterport-dl.py"]
+    ROOT_FILE_COPY = ("JSNetProxy.js", "matterport-dl.py", "_matterport_interactive.py")
     for fl in ROOT_FILE_COPY:
         if not os.path.exists(fl):
             shutil.copy2(os.path.join(BASE_MATTERPORTDL_DIR, fl), fl)
