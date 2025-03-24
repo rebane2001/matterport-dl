@@ -7,7 +7,7 @@ body:
   attributes:
     value: |
       Please make sure to [search for existing issues](https://github.com/rebane2001/matterport-dl/issues)!
-			Try running `run.py` instead of matterport-dl.py as it will check for environment errors
+      Try running `run.py` instead of matterport-dl.py as it will check for environment errors
       Also check you can reproduce this with the latest version of matterport-dl.
       Make sure your dependencies are all up to date (`pip install -U -r requirements.txt`) including your python version is at least the version mentioned in the readme: https://github.com/rebane2001/matterport-dl/blob/main/README.md
       Remember open source projects like this one are by volunteers the easier you make your bug to reproduce and limited variables the more likely/faster it will be resolved.
