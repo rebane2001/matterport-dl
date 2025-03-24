@@ -1,3 +1,6 @@
+# 2025-03-25
+- Added `run.py` and recommend as the default entrypoint.  It should do better to make sure everyone has the proper requirements and python version installed.
+
 # 2025-03-22
 - Major new interactive terminal UI mostly thanks to @AdiWeit. Allows downloading multiple urls at once, extracting matterport embeds, renaming, deleting, and launching models from the interface
 

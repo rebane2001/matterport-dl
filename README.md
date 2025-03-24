@@ -1,7 +1,7 @@
 # matterport-dl
 A tool to download/archive [Matterport](https://matterport.com) digital twin virtual tours.  Supports most matterport virtual tour links ( ie https://my.matterport.com/show/?m=roWLLMMmPL8 ). This project is not in any way associated with or supported by Matterport Inc in any way all relevant trademarks and rights are reserve Matterport Inc.
 
-Currently matterport-dl.py is primarily maintained by [@mitchcapper](https://github.com/mitchcapper).
+Currently matterport-dl is primarily maintained by [@mitchcapper](https://github.com/mitchcapper).
 
 See [CHANGELOG.md](CHANGELOG.md) for changes and [DEVELOPERS.md](DEVELOPERS.md) for some developer notes.
 
@@ -16,7 +16,7 @@ It supports offline viewing of virtual tours and most tour features including:
 - Embedded attachments / Matterport Tags
 - Skyboxes for outside environments
 - Most other Matterport plugins
-- Partial AI defurnished model support (must caller matterport-dl.py with the ID for the defurnished model cannot just auto swap *yet*)
+- Partial AI defurnished model support (must call matterport-dl.py a second time with the ID for the defurnished model cannot just auto swap *yet*)
 
 # Todo / Up for Grabs
 While it is largely feature complete in its ability to preserve an entire digital twin there are a few things on the todo list. See [TODO.md](TODO.md) for details but in short:
@@ -25,16 +25,19 @@ While it is largely feature complete in its ability to preserve an entire digita
 - Static (non matterport-dl.py server hosting)
 
 # Usage
+Note there is `run.py` which is now the recommended way to call `matterport-dl.py`.  It ensures all requirements are installed, python is the right version and runs inside a virtual env.  It takes all the same args as the main script.  If for some reason `run.py` doesn't work for you, you can call `matterport-dl.py` direct.
 
 1. Install Python 3.12 or higher.
 2. Download the files from this repository (click Code button near upper right and click download zip).
 3. Extract these files to a local folder.
-4. At the root of the folder run `pip install -r requirements.txt`
-5. Donwload a virtual tour by running `matterport-dl.py [url_or_page_id]`, you may need to use `python3 matterport-dl.py ...` or `python matterport-dl.py ...` instead.
-6. Serve a downloaded virtual tour by running `matterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080` and visiting http://127.0.0.1:8080 in a browser.
+4. Download a virtual tour by running `run.py [url_or_page_id]`, you may need to use `python3 run.py ...` or `python run.py ...` instead.
+5. Serve a downloaded virtual tour by running `run.py [url_or_page_id_or_alias] 127.0.0.1 8080` and visiting http://127.0.0.1:8080 in a browser.
+
+**Note:** If you want to run `matterport-dl.py` directly, after step 3 install all the requirements from the root of the folder by running: `pip install -r requirements.txt`
+
 
 ## Interactive Terminal Interface
-While this script was originally a static command line tool it now has an embedded interactive terminal interface.  You can launch this interface by running matterport-dl.py without specifying a model or url to download/serve.  The interface supports downloading one or more models at once, renaming, deleting existing models and launching them.  Any command that requires a specific model (ie rename) you can either provide the model ID or the model alias (if it has one).  You can also use tab autocomplete on the id/name. The interface looks like this:
+While this script was originally a static command line tool it now has an embedded interactive terminal interface.  You can launch this interface by running run.py without specifying a model or url to download/serve.  The interface supports downloading one or more models at once, renaming, deleting existing models and launching them.  Any command that requires a specific model (ie rename) you can either provide the model ID or the model alias (if it has one).  You can also use tab autocomplete on the id/name. The interface looks like this:
 ```
 ------------------------------------------------------------------------------------------------------
 To start/serve a matterport, please enter the number or the name of the matterport in the list below.
@@ -78,7 +81,7 @@ These are more likely to change and/or have bugs. They are generally not for mos
 ## Defaults / Config JSON
 The tool with automatically load a `defaults.json` file and if given a model attempt to load a `run_args.json` file from the model's download folder as well.  The `run_args.json` file is created automatically whenever a model is downloaded it contains the command line settings that were used at time of download.  This is mostly useful for future runs/serving to make sure the same options are used.  `defaults.json` is loaded (if it exists) from next to the `matterport-dl.py` file.  It is never created by default but can be manually created and can contain any command line option like `run_args.json`.  It is loaded first (if it exists) then `run_args.json` and finally the actual command line args that were passed.  The last specified instance of an arg take presence.  This means if `defaults.json` has `--proxy 127.0.0.1` in it but you pass the `--no-proxy` command line option then the proxy is disabled.
 
-An interesting use case for `defaults.json` can be the `--auto-serve` option as this will automatically start a server (and optionally launch a browser) without any command being passed to matterport-dl.py.  For example if your `defaults.json` contained:
+An interesting use case for `defaults.json` can be the `--auto-serve` option as this will automatically start a server (and optionally launch a browser) without any command being passed to run.py.  For example if your `defaults.json` contained:
 ```json
 {
 	"AUTO_SERVE": "roWLLMMmPL8|127.0.0.1|12345|chrome",

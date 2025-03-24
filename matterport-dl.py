@@ -39,6 +39,7 @@ if sys.platform == "win32":
 
 
 BASE_MATTERPORTDL_DIR = pathlib.Path(__file__).resolve().parent
+SCRIPT_NAME = os.path.basename(sys.argv[0])
 MAX_CONCURRENT_REQUESTS = 20  # cffi will make sure no more than this many curl workers are used at once
 MAX_CONCURRENT_TASKS = 64  # while we could theoretically leave this unbound just relying on MAX_CONCURRENT_REQESTS there is little reason to spawn a million tasks at once
 
@@ -102,7 +103,7 @@ def git_rev():
 
 
 def sys_info():
-    str = "Running python "
+    str = "Running " + SCRIPT_NAME + " with python "
     try:
         str += platform.python_version()
         str += " on " + sys.platform
@@ -1720,7 +1721,7 @@ class CLA:
 
 
 DEFAULTS_JSON_FILE = "defaults.json"
-if __name__ == "__main__":
+def main():
     CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to=ArgAppliesTo.BOTH)
     CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, you must use the same option during the capture and serving", sys.platform == "win32")
@@ -1811,7 +1812,7 @@ if __name__ == "__main__":
                 sys.path.insert(0, str(BASE_MATTERPORTDL_DIR))
                 from _matterport_interactive import interactiveManagerGetToServe, print_colored, bcolors
                 print("Running in interactive mode.\n\tIf you instead wanted command line usage start this script with: ",end="")
-                print_colored("matterport-dl.py --help", bcolors.WARNING)
+                print_colored(f"{SCRIPT_NAME} --help", bcolors.WARNING)
 
                 pageId = interactiveManagerGetToServe(baseDir, subProcessArgs)
 
@@ -1823,7 +1824,7 @@ if __name__ == "__main__":
                 print("Error: Could not import interactive start from _matterport_interactive.py")
 
         else:
-            print("Usage:\nmatterport-dl.py - Interactive terminal UI mode, any options below will still be passed to any downloads or server starts\nmatterport-dl.py [url_or_page_id] - Download mode, to download the digital twin\nmatterport-dl.py [url_or_page_id_or_alias] 127.0.0.1 8080 - Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
+            print(f"Usage:\n{SCRIPT_NAME} - Interactive terminal UI mode, any options below will still be passed to any downloads or server starts\n{SCRIPT_NAME} [url_or_page_id] - Download mode, to download the digital twin\n{SCRIPT_NAME} [url_or_page_id_or_alias] 127.0.0.1 8080 - Server mode after downloading will serve the twin just and open http://127.0.0.1:8080 in a browser\n\tThe following options apply to the download run options:")
             print(CLA.getUsageStr())
             print("\tServing options:")
             print(CLA.getUsageStr(forServerNotDownload=True))
@@ -1836,3 +1837,5 @@ if __name__ == "__main__":
     if isServerRun:
         startServer(baseDir, pageId, browserLaunch, bindIp, bindPort)
 
+if __name__ == "__main__":
+    main()
