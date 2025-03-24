@@ -9,7 +9,7 @@ import shutil
 import os
 import sys
 import readline
-import signal
+
 
 
 DOWNLOAD_DIR="downloads"
@@ -17,10 +17,6 @@ DOWNLOAD_DIR="downloads"
 def get_downloads_path():
     global DOWNLOAD_DIR
     return DOWNLOAD_DIR
-
-def sigint_handler(signal, frame):
-    os._exit(130)
-signal.signal(signal.SIGINT, sigint_handler)
 
 def load_model_json(model_id):
     """Load JSON data from a model's run_args.json file, returning the data or an empty dictionary if not found"""
@@ -262,9 +258,9 @@ def interactiveManagerGetToServe(downloadDir, matterportArgs):
         print_separator()
         try:
             answer = input("input: ")
-        except EOFError or KeyboardInterrupt:  # ^C or ^D to exit (POSIX-based)
+        except EOFError or KeyboardInterrupt:  # ^C or ^D to exit (POSIX-based), actually keyboard interrupt wont be raised by our default signal handler
             print()
-            os._exit(130)
+            sys.exit(130)
         command, arg = parse_command(answer)
 
         if command == "delete":
