@@ -1721,7 +1721,8 @@ class CLA:
 
 DEFAULTS_JSON_FILE = "defaults.json"
 if __name__ == "__main__":
-    CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to=ArgAppliesTo.BOTH)
+    BASEDIR_DEFAULT = "./downloads"
+    CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", BASEDIR_DEFAULT, itemValueHelpDisplay="dir", allow_saved=False, applies_to=ArgAppliesTo.BOTH)
     CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, you must use the same option during the capture and serving", sys.platform == "win32")
     CLA.addCommandLineArg(CommandLineArg.ALIAS, "create an alias symlink for the download with this name, does not override any existing (can be used when serving)", "", itemValueHelpDisplay="name")
@@ -1762,6 +1763,12 @@ if __name__ == "__main__":
                 sys.argv = arr
 
     baseDir = CLA.getCommandLineArg(CommandLineArg.BASE_FOLDER)
+    if baseDir == BASEDIR_DEFAULT and not (BASE_MATTERPORTDL_DIR/'LICENSE').exists() :
+        # This may be the "archived" version within a downloaded archive. We don't want to make assumptions about
+        # what directory we're named, but look for LICENSE next to us - if it's there, assume we're not an archive.
+        from _matterport_interactive import print_colored, bcolors
+        print_colored("Assuming archive mode and looking for models next to us.", bcolors.WARNING)
+        baseDir = ".."
 
     SetupSession(CLA.getCommandLineArg(CommandLineArg.PROXY))
     pageId = ""
