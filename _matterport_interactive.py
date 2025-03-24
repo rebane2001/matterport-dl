@@ -10,12 +10,13 @@ import os
 import sys
 import readline
 
+
+
 DOWNLOAD_DIR="downloads"
 
 def get_downloads_path():
     global DOWNLOAD_DIR
     return DOWNLOAD_DIR
-
 
 def load_model_json(model_id):
     """Load JSON data from a model's run_args.json file, returning the data or an empty dictionary if not found"""
@@ -252,8 +253,14 @@ def interactiveManagerGetToServe(downloadDir, matterportArgs):
                 itemName = f"{downloads[key]} ({itemName})"
             print(f"[{i}] {itemName}")
 
+        print(f"{bcolors.BOLD}Ctrl-C{bcolors.ENDC} to {bcolors.BOLD}exit{bcolors.ENDC}.")
+
         print_separator()
-        answer = input("input: ")
+        try:
+            answer = input("input: ")
+        except EOFError or KeyboardInterrupt:  # ^C or ^D to exit (POSIX-based), actually keyboard interrupt wont be raised by our default signal handler
+            print()
+            sys.exit(130)
         command, arg = parse_command(answer)
 
         if command == "delete":

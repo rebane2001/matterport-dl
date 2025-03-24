@@ -31,6 +31,8 @@ import logging
 from tqdm import tqdm
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import decimal
+import signal
+signal.signal(signal.SIGINT, signal.SIG_DFL) #quiet control + c
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
