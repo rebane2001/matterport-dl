@@ -7,7 +7,8 @@ body:
   attributes:
     value: |
       Please make sure to [search for existing issues](https://github.com/rebane2001/matterport-dl/issues)!
-      Also check you can reproduce this with the latest version of matterport-dl. 
+			Try running `run.py` instead of matterport-dl.py as it will check for environment errors
+      Also check you can reproduce this with the latest version of matterport-dl.
       Make sure your dependencies are all up to date (`pip install -U -r requirements.txt`) including your python version is at least the version mentioned in the readme: https://github.com/rebane2001/matterport-dl/blob/main/README.md
       Remember open source projects like this one are by volunteers the easier you make your bug to reproduce and limited variables the more likely/faster it will be resolved.
 
@@ -17,7 +18,7 @@ body:
     placeholder: "AAee22A"
     description: |
       IE: https://my.matterport.com/show/?m=3EjZgu2vnFc  or 3EjZgu2vnFc, 39awerJ291
-      If this can only be reproduced with a private ID you can note that but it may be less likely to be resolved.      
+      If this can only be reproduced with a private ID you can note that but it may be less likely to be resolved.
   validations:
     required: true
 
@@ -39,7 +40,7 @@ body:
     label: Started up message
     placeholder: "Started up a download run...."
     description: |
-      If you are able to start matterport-dl.py it should say first thing a line like `Started up a download run Running python 3.2.4 on win32 with matterport-dl version: main (0fe3e39d81947e646ca3d4897c94c062020ae1af)`.
+      If you are able to start run.py it should say first thing a line like `Started up a download run Running python 3.2.4 on win32 with matterport-dl version: main (0fe3e39d81947e646ca3d4897c94c062020ae1af)`.
       Please include that line here if you have it.
   validations:
     required: false
