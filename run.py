@@ -334,6 +334,7 @@ def main():
         return
 
     # We're now running in the virtual environment
+
     # Check for required files
     check_required_files(script_dir)
 
