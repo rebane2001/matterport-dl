@@ -316,6 +316,10 @@ def main():
     # Get the directory where the script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
+
+    # Check Python version
+    check_python_version()
+    
     # Setup virtual environment if needed
     venv_dir = os.path.join(script_dir, "venv")
 
@@ -331,9 +335,6 @@ def main():
         return
 
     # We're now running in the virtual environment
-
-    # Check Python version
-    check_python_version()
 
     # Check for required files
     check_required_files(script_dir)
