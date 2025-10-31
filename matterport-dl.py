@@ -28,11 +28,15 @@ from typing import Any, ClassVar, cast
 from dataclasses import dataclass
 
 import logging
-from tqdm import tqdm
+from functools import partial
+from tqdm import tqdm as std_tqdm
+
+tqdm = partial(std_tqdm, smoothing=0.1)
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import decimal
 import signal
-signal.signal(signal.SIGINT, signal.SIG_DFL) #quiet control + c
+
+signal.signal(signal.SIGINT, signal.SIG_DFL)  # quiet control + c
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -235,7 +239,7 @@ async def downloadFileWithJSONPost(type, shouldExist, url, file, post_json_str, 
         logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId)
     except Exception as ex:
         logUrlDownloadFinish(type, file, url, descriptor, shouldExist, reqId, ex)
-        raise Exception(f"Request error for url: {url} ({type}) that would output to: {file} of: {ex}") from ex #str(ex) only is really doing the message not the entire cert  but we want the general error msg
+        raise Exception(f"Request error for url: {url} ({type}) that would output to: {file} of: {ex}") from ex  # str(ex) only is really doing the message not the entire cert  but we want the general error msg
 
 
 async def GetTextOnlyRequest(type, shouldExist, url, post_data=None) -> str:
@@ -328,7 +332,7 @@ def validUntilFix(text):
 
 
 async def downloadGraphModels(pageid):
-    global GRAPH_DATA_REQ, BASE_MATTERPORT_DOMAIN
+    global GRAPH_DATA_REQ, BASE_MATTERPORT_DOMAIN, MODEL_IS_DEFURNISHED
     makeDirs("api/mp/models")
 
     for key in GRAPH_DATA_REQ:
@@ -337,8 +341,10 @@ async def downloadGraphModels(pageid):
         req_url = GRAPH_DATA_REQ[key].replace("[MATTERPORT_MODEL_ID]", pageid)
         text = await downloadFileAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph{req_url}", file_path, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES) and CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
         KeyHandler.SaveKeysFromText(f"GRAPH_{key}", text)
-        if key == "GetModelViewPrefetch":
-            KeyHandler.SetAccessKey(AccessKeyType.GRAPH_MODEL_VIEW_PREFETCH, KeyHandler.GetKeysFromStr(text)[0])
+        if key == "GetModelViewPrefetch" and not MODEL_IS_DEFURNISHED:
+            prefetchKeys = KeyHandler.GetKeysFromStr(text)
+            if len(prefetchKeys) > 0:
+                KeyHandler.SetAccessKey(AccessKeyType.GRAPH_MODEL_VIEW_PREFETCH, prefetchKeys[0])
 
         # Patch (graph_GetModelDetails.json & graph_GetSnapshots.json and such) URLs to Get files form local server instead of https://cdn-2.matterport.com/
         if CLA.getCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT):
@@ -383,7 +389,10 @@ class ProgressStats:
         return val
 
     def TotalPosRequests(self):
-        return self.Val(ProgressType.Request) + self.Val(ProgressType.Skipped)
+        ret = self.Val(ProgressType.Request) + self.Val(ProgressType.Skipped)
+        if ret == 0:
+            ret = 0.01  # avoid div by 0
+        return ret
 
     def ValStr(self, typ: ProgressType):
         val = self.Val(typ)
@@ -668,12 +677,10 @@ class ExceptionWhatExceptionTaskGroup(asyncio.TaskGroup):
 
 
 async def AsyncArrayDownload(assets: list[AsyncDownloadItem]):
-    # with tqdm(total=(len(assets))) as pbar:
     async with ExceptionWhatExceptionTaskGroup() as tg:
         PROGRESS.RelativeMark()
 
         for asset in tqdm(assets):
-            # pbar.update(1)
             tg.create_task(downloadFile(asset.type, asset.shouldExist, asset.url, asset.file, key_type=asset.key_type))
             await asyncio.sleep(0.001)  # we need some sleep or we will not yield
             while MAX_TASKS_SEMAPHORE.locked():
@@ -923,7 +930,7 @@ async def downloadCapture(pageid):
 
     content = validUntilFix(content)
     content = content.replace("<head>", f"<head><script>{injectedjs}</script>{proxyAdd}")
-    content = content.replace('from "https://static.matterport.com', 'from ".') # fix the direct code import they added
+    content = content.replace('from "https://static.matterport.com', 'from ".')  # fix the direct code import they added
     with open(getModifiedName("index.html"), "w", encoding="UTF-8") as f:
         f.write(content)
 
@@ -1082,7 +1089,7 @@ async def AdvancedAssetDownload(base_page_text: str):
             consoleLog("No embedded cache node falling back to Graph GetModelDetails query", logging.WARNING)
             base_cache_node = base_node
         if not base_node:
-            consoleLog("Not sure data query GetModelDetails worked we didn't get json back as expected, generally we don't need it for the dl run as we use embedded cache", logging.info)
+            consoleLog("Not sure data query GetModelDetails worked we didn't get json back as expected, generally we don't need it for the dl run as we use embedded cache", logging.INFO)
             base_node = base_cache_node
         if "locations" not in base_node:  # the query doesnt get locations back but the cache does have it, this is expected true
             base_node["locations"] = base_cache_node["locations"]
@@ -1092,15 +1099,19 @@ async def AdvancedAssetDownload(base_page_text: str):
             KeyHandler.SetAccessKey(AccessKeyType.FILES2_BASE_URL_KEY, "INVALIDGENERICACCESSKEYFILE2")
             KeyHandler.SetAccessKey(AccessKeyType.FILES3_TEMPLATE_KEY, "INVALIDGENERICACCESSKEYFILES3")
             KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_DAM_50K, "INVALIDGENERICACCESSKEYDAM")
-            BASE_MODEL_ID = base_cache_node["baseView"]["model"]["id"]
+            # BASE_MODEL_ID = base_cache_node["baseView"]["model"]["id"]
+            BASE_MODEL_ID = base_cache_node["views"][0]["model"]["rootModelId"]
             consoleLog("Downloading fix api info for  base model...")
             await downloadFixedAPIInfo(BASE_MODEL_ID)
             KeyHandler.SetAccessKey(AccessKeyType.SWEEP_KEY, KeyHandler.GetKeysFromStr(base_cache_node["locations"][0]["pano"]["skyboxes"][0]["tileUrlTemplate"])[0])
 
         else:
             KeyHandler.SetAccessKey(AccessKeyType.MAIN_PAGE_GENERIC_KEY, KeyHandler.GetKeysFromStr(base_cache_node["assets"]["textures"][0]["urlTemplate"])[0])
+            if base_cache_node["defurnishViews"] and base_cache_node["defurnishViews"][0]:
+                consoleLog(f"#### WARNING: Model has defurnished view if you want to download it you must run a second matterport-dl.py download on its id of: {base_cache_node['defurnishViews'][0]['model']['id']}", loglevel=logging.WARN)
         toDownload: list[AsyncDownloadItem] = []
-        consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots['assets']['photos'])} meshes: {len(base_node['assets']['meshes'])}, locations: {len(base_node['locations'])}, tileset indexes: {len(base_node['assets']['tilesets'])}, textures: {len(base_node['assets']['textures'])}, ")
+        if base_node_snapshots:
+            consoleDebugLog(f"AdvancedDownload photos: {len(base_node_snapshots['assets']['photos'])} meshes: {len(base_node['assets']['meshes'])}, locations: {len(base_node['locations'])}, tileset indexes: {len(base_node['assets']['tilesets'])}, textures: {len(base_node['assets']['textures'])}, ")
 
         # now: getmodeldetails: data.model.assets.meshes
         # Note if this is actually base_node the damn key won't work, only prefetch one seems to work
@@ -1121,7 +1132,7 @@ async def AdvancedAssetDownload(base_page_text: str):
 
         # Download GetModelPrefetch.data.model.locations[X].pano.skyboxes[Y].urlTemplate
         # now: getsweeps graph data: data.model.locations
-        resolutionDetectionWarning=""
+        resolutionDetectionWarning = ""
         do4K = len(base_node["locations"]) == 0  # by default only do 4k if we have no locations data to check
         for location in base_node["locations"]:
             if "4k" in location["pano"]["resolutions"]:
@@ -1366,17 +1377,18 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
     def do_GraphRequest(self, option_name: str):
         post_msg = None
         logLevel = logging.INFO
-        file_path = f"api/mp/models/graph_{option_name}.json"
-        if option_name in GRAPH_DATA_REQ and os.path.exists(file_path):
+        if option_name in GRAPH_DATA_REQ:
             self.send_response(200)
             self.end_headers()
-            with open(file_path, "r", encoding="UTF-8") as f:
-                self.wfile.write(f.read().encode("utf-8"))
-                post_msg = f"graph of operationName: {option_name} we are handling internally"
-        else:
-            logLevel = logging.WARNING
-            post_msg = f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead. If you get an error this may be why (include this message in bug report)."
-            self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
+            file_path = f"api/mp/models/graph_{option_name}.json"
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="UTF-8") as f:
+                    self.wfile.write(f.read().encode("utf-8"))
+                    post_msg = f"graph of operationName: {option_name} we are handling internally"
+            else:
+                logLevel = logging.WARNING
+                post_msg = f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead. If you get an error this may be why (include this message in bug report)."
+                self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
 
         if post_msg is not None:
             consoleDebugLog(f"Handling a graph request on {self.path}: {post_msg}", loglevel=logLevel)
@@ -1461,6 +1473,7 @@ def RegisterWindowsBrowsers():
             name = name.replace("Google ", "").replace("Mozilla ", "").replace("Microsoft ", "")  # emulate stock names
             webbrowser.register(name, None, webbrowser.GenericBrowser(cmd))
 
+
 def startServer(baseDir, pageId, browserLaunch, bindAddress, bindPort):
     global SERVED_BASE_URL
     twinDir = getPageId(pageId)
@@ -1488,10 +1501,12 @@ def startServer(baseDir, pageId, browserLaunch, bindAddress, bindPort):
     if browserLaunch:
         print(f"Going to try and launch browser type: {browserLaunch}")
         import webbrowser
+
         if sys.platform == "win32":
             RegisterWindowsBrowsers()
         webbrowser.get(browserLaunch).open_new_tab(url)
     httpd.serve_forever()
+
 
 class KeyHandler:
     # not actually used currently
@@ -1720,9 +1735,11 @@ class CLA:
 
 
 DEFAULTS_JSON_FILE = "defaults.json"
+
+
 def main():
     CLA.addCommandLineArg(CommandLineArg.BASE_FOLDER, "folder to store downloaded models in (or serve from)", "./downloads", itemValueHelpDisplay="dir", allow_saved=False, applies_to=ArgAppliesTo.BOTH)
-    CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests", "", "127.0.0.1:8866", allow_saved=False)
+    CLA.addCommandLineArg(CommandLineArg.PROXY, "using web proxy specified for all requests, use --no-verify-ssl to disable ssl verification", "", "127.0.0.1:8866", allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.TILDE, "allowing tildes on file paths, likely must be disabled for Apple/Linux, you must use the same option during the capture and serving", sys.platform == "win32")
     CLA.addCommandLineArg(CommandLineArg.ALIAS, "create an alias symlink for the download with this name, does not override any existing (can be used when serving)", "", itemValueHelpDisplay="name")
     CLA.addCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD, "downloading advanced assets enables things like skyboxes, dollhouse, floorplan layouts, now primary access keys come from it so generally required", True)
@@ -1765,22 +1782,22 @@ def main():
 
     SetupSession(CLA.getCommandLineArg(CommandLineArg.PROXY))
     pageId = ""
-    bindIp="127.0.0.1"
-    bindPort=8080
+    bindIp = "127.0.0.1"
+    bindPort = 8080
     argPos = 1
     isServerRun = False
     isDownloadRun = False
-    subProcessArgs = CLA.orig_args.copy() #args we give the interactive UI minus ip and port as it only uses them for downloads
+    subProcessArgs = CLA.orig_args.copy()  # args we give the interactive UI minus ip and port as it only uses them for downloads
     if len(sys.argv) > argPos:
         pageIdOrIp = sys.argv[argPos]
         # Check if pageIdOrIp is an IP address
-        ip_pattern = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+        ip_pattern = re.compile(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$")
         if not ip_pattern.match(pageIdOrIp):
             pageId = getPageId(pageIdOrIp)
             argPos += 1
-            if len(sys.argv) == argPos: #if no more args its a download run
+            if len(sys.argv) == argPos:  # if no more args its a download run
                 isDownloadRun = True
-        if len(sys.argv) == argPos+2: #ip and port left, note if it was an IP above we didn't increment argPos
+        if len(sys.argv) == argPos + 2:  # ip and port left, note if it was an IP above we didn't increment argPos
             isServerRun = pageId != ""
             bindIp = sys.argv[argPos]
             subProcessArgs.remove(bindIp)
@@ -1810,14 +1827,14 @@ def main():
             try:
                 sys.path.insert(0, str(BASE_MATTERPORTDL_DIR))
                 from _matterport_interactive import interactiveManagerGetToServe, print_colored, bcolors
-                print("Running in interactive mode.\n\tIf you instead wanted command line usage start this script with: ",end="")
+
+                print("Running in interactive mode.\n\tIf you instead wanted command line usage start this script with: ", end="")
                 print_colored(f"{SCRIPT_NAME} --help", bcolors.WARNING)
 
                 pageId = interactiveManagerGetToServe(baseDir, subProcessArgs)
 
                 if pageId:
                     isServerRun = True
-
 
             except ImportError:
                 print("Error: Could not import interactive start from _matterport_interactive.py")
@@ -1835,6 +1852,7 @@ def main():
 
     if isServerRun:
         startServer(baseDir, pageId, browserLaunch, bindIp, bindPort)
+
 
 if __name__ == "__main__":
     main()
