@@ -558,45 +558,75 @@ async def downloadAssets(base, base_page_text):
     #     9114: "core"
     # } [e] || e) + ".css"
 
-    match = re.search(
-        r"""
-                "js/"\+ # find js/+  (literal plus)
-                (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
-                (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
-                css #stopping when we see the css
-                (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
-                .+? #skip the minimum amount to get to next part
-                miniCss=.+? #find miniCss= then skip minimum to first &&
-                &&
-                (?P<CSSFileToKey>.+?) #capture minimum until we get to next &&
-                &&
-              """,
-        showcase_cont,
-        re.X,
-    )
-    if match is None:
-        raise Exception("Unable to extract js files and css files from showcase runtime js file")
-    groupDict = match.groupdict()
-    jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"])
-    jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"])
-    cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles", groupDict["namedCSSFiles"])
-    cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"])
+    # Try new format first: l.u=e=>"js/"+({num:"name",...}[e]||e)+".js" (no hash suffix)
+    # This format has inline dictionaries without separate hash keys
+    new_js_match = re.search(r'\.u\s*=\s*e\s*=>\s*"js/"\s*\+\s*\(\s*(\{[^}]+\})', showcase_cont)
+    new_css_match = re.search(r'\.miniCssF\s*=\s*e\s*=>\s*"css/"\s*\+\s*\(\s*(\{[^}]+\})', showcase_cont)
 
-    for number, key in jsKeyDict.items():
-        name = number
-        if name in jsNamedDict:
-            name = jsNamedDict[name]
-        file = f"js/{name}.{key}.js"
-        typeDict[file] = "SHOWCASE_DISCOVERED_JS"
-        assets.append(file)
+    if new_js_match and new_css_match:
+        # New format - extract inline dictionaries
+        def parseInlineDict(dictStr: str) -> dict[str, str]:
+            ret: dict[str, str] = {}
+            # Parse {num:"name",num:"name",...} format
+            pairs = re.findall(r'(\d+)\s*:\s*"([^"]+)"', dictStr)
+            for num, name in pairs:
+                ret[num] = name
+            return ret
 
-    for number, key in cssKeyDict.items():
-        name = number
-        if name in cssNamedDict:
-            name = cssNamedDict[name]
-        file = f"css/{name}.css"  # key is not used for css its just 1 always
-        typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
-        assets.append(file)
+        jsNamedDict = parseInlineDict(new_js_match.group(1))
+        cssNamedDict = parseInlineDict(new_css_match.group(1))
+
+        # In new format, files are just {name}.js or {number}.js - no hash suffix
+        for number, name in jsNamedDict.items():
+            file = f"js/{name}.js"
+            typeDict[file] = "SHOWCASE_DISCOVERED_JS"
+            assets.append(file)
+
+        for number, name in cssNamedDict.items():
+            file = f"css/{name}.css"
+            typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
+            assets.append(file)
+    else:
+        # Fall back to old format with separate name and key dictionaries
+        match = re.search(
+            r"""
+                    "js/"\+ # find js/+  (literal plus)
+                    (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
+                    (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
+                    css #stopping when we see the css
+                    (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
+                    .+? #skip the minimum amount to get to next part
+                    miniCss=.+? #find miniCss= then skip minimum to first &&
+                    &&
+                    (?P<CSSFileToKey>.+?) #capture minimum until we get to next &&
+                    &&
+                  """,
+            showcase_cont,
+            re.X,
+        )
+        if match is None:
+            raise Exception("Unable to extract js files and css files from showcase runtime js file")
+        groupDict = match.groupdict()
+        jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"])
+        jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"])
+        cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles", groupDict["namedCSSFiles"])
+        cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"])
+
+        for number, key in jsKeyDict.items():
+            name = number
+            if name in jsNamedDict:
+                name = jsNamedDict[name]
+            file = f"js/{name}.{key}.js"
+            typeDict[file] = "SHOWCASE_DISCOVERED_JS"
+            assets.append(file)
+
+        for number, key in cssKeyDict.items():
+            name = number
+            if name in cssNamedDict:
+                name = cssNamedDict[name]
+            file = f"css/{name}.css"  # key is not used for css its just 1 always
+            typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
+            assets.append(file)
 
     for image in image_files:
         if not image.endswith(".jpg") and not image.endswith(".svg"):
