@@ -10,31 +10,41 @@ import os
 import sys
 import readline
 
+DOWNLOAD_DIR = "downloads"
 
-
-DOWNLOAD_DIR="downloads"
 
 def get_downloads_path():
     global DOWNLOAD_DIR
     return DOWNLOAD_DIR
 
+
 def load_model_json(model_id):
     """Load JSON data from a model's run_args.json file, returning the data or an empty dictionary if not found"""
     run_args_path = os.path.join(get_downloads_path(), model_id, "run_args.json")
     if not os.path.exists(run_args_path):
-        print_colored(f"Warning: No run_args.json found for {model_id}", bcolors.WARNING)
+        print_colored(
+            f"Warning: No run_args.json found for {model_id}", bcolors.WARNING
+        )
         return {}
     try:
         with open(run_args_path, "r") as f:
             return json.load(f)
     except json.JSONDecodeError:
-        print_colored(f"Error: Invalid JSON in run_args.json for model {model_id}", bcolors.WARNING)
+        print_colored(
+            f"Error: Invalid JSON in run_args.json for model {model_id}",
+            bcolors.WARNING,
+        )
         return {}
     except FileNotFoundError:
-        print_colored(f"Warning: No run_args.json found for {model_id}", bcolors.WARNING)
+        print_colored(
+            f"Warning: No run_args.json found for {model_id}", bcolors.WARNING
+        )
         return {}
     except Exception as e:
-        print_colored(f"Error reading run_args.json for model {model_id}: {str(e)}", bcolors.WARNING)
+        print_colored(
+            f"Error reading run_args.json for model {model_id}: {str(e)}",
+            bcolors.WARNING,
+        )
         return {}
 
 
@@ -46,7 +56,10 @@ def save_model_json(model_id, data):
             json.dump(data, f, indent=2)
         return True
     except Exception as e:
-        print_colored(f"Error saving run_args.json for model {model_id}: {str(e)}", bcolors.WARNING)
+        print_colored(
+            f"Error saving run_args.json for model {model_id}: {str(e)}",
+            bcolors.WARNING,
+        )
         return False
 
 
@@ -100,7 +113,9 @@ def create_alias_smylink(model_id, alias):
     if not os.path.exists(alias_path):
         try:
             os.symlink(model_path, alias_path)
-            print_colored(f"Created symlink {alias} pointing to {model_id}", bcolors.OKGREEN)
+            print_colored(
+                f"Created symlink {alias} pointing to {model_id}", bcolors.OKGREEN
+            )
         except OSError as e:
             print_colored(f"Error creating symlink alias {alias}: {e}", bcolors.WARNING)
 
@@ -152,7 +167,11 @@ class bcolors:
 
 bcolors = bcolors()  # Initialize once
 
-COMMANDS = {"delete": ["del", "rm", "delete"], "rename": ["re", "ren", "rename"], "download": ["dl", "download"]}
+COMMANDS = {
+    "delete": ["del", "rm", "delete"],
+    "rename": ["re", "ren", "rename"],
+    "download": ["dl", "download"],
+}
 
 
 def parse_command(answer):
@@ -166,17 +185,23 @@ def parse_command(answer):
 
 
 def download(matterportArgs, url):
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36"
+    }
 
     if "https://" in url:
         result = requests.get(url, headers=headers)
         content = result.content.decode()
-        urls = set(re.findall(r"https://my\.matterport\.com/show/\?m=([a-zA-Z0-9]+)", content))
+        urls = set(
+            re.findall(r"https://my\.matterport\.com/show/\?m=([a-zA-Z0-9]+)", content)
+        )
         # TODO: support more website types?: https://my.matterport.com/models/EGxFGTFyC9N
         # https://my.matterport.com/work?m=EGxFGTFyC9N
         # urls = set(re.findall(r'https://my\.matterport\.com/(show/|work)\?m=([a-zA-Z0-9]+)', content))
         if len(urls) < 1:
-            download(input("no matterport was found! please enter a valid web address: "))
+            download(
+                input("no matterport was found! please enter a valid web address: ")
+            )
             return
     else:
         urls = [url]
@@ -185,7 +210,10 @@ def download(matterportArgs, url):
         fullArgs = [sys.executable] + matterportArgs + [url]
         output = subprocess.run(fullArgs)
         if output.returncode == 1:
-            print_colored('Download failed! Make sure you type in a valid web address or ID. The web address must contain "https://" Please consider that the downloader itself might be broken.', bcolors.FAIL)
+            print_colored(
+                'Download failed! Make sure you type in a valid web address or ID. The web address must contain "https://" Please consider that the downloader itself might be broken.',
+                bcolors.FAIL,
+            )
         print_separator()
 
 
@@ -220,7 +248,9 @@ def getModelId(input_text, keys, downloads):
 
 def handle_model_not_found():
     """Handle case when no matching model is found"""
-    error_message("No matching matterport found. Please try again, to download a model use 'download [url|model_id]'.")
+    error_message(
+        "No matching matterport found. Please try again, to download a model use 'download [url|model_id]'."
+    )
     return False
 
 
@@ -235,12 +265,24 @@ def interactiveManagerGetToServe(downloadDir, matterportArgs):
         print_separator()
         downloads = load_model_data()
 
-        print(f"To start/serve a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below.")
-        print(f'To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter "download "{bcolors.ENDC} followed by the web address or ID{bcolors.ENDC}')
-        print(f'To download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}')
-        print(f'To {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or name.')
-        print(f'To {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or name.')
-        print(f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport.")
+        print(
+            f"To start/serve a matterport, please {bcolors.BOLD}enter the number or the name{bcolors.ENDC} of the matterport in the list below."
+        )
+        print(
+            f'To {bcolors.BOLD}download{bcolors.ENDC} a matterport, {bcolors.BOLD}enter "download "{bcolors.ENDC} followed by the web address or ID{bcolors.ENDC}'
+        )
+        print(
+            f'To download {bcolors.BOLD}multiple matterports{bcolors.ENDC}, you can enter multiple web addresses {bcolors.BOLD}separated by " "{bcolors.ENDC}'
+        )
+        print(
+            f'To {bcolors.BOLD}delete{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"delete "{bcolors.ENDC} followed by the associated number or name.'
+        )
+        print(
+            f'To {bcolors.BOLD}rename{bcolors.ENDC} a matterport, enter {bcolors.BOLD}"rename "{bcolors.ENDC} followed by the associated number or name.'
+        )
+        print(
+            f"You can press {bcolors.BOLD}tab{bcolors.ENDC} to {bcolors.BOLD}auto-complete{bcolors.ENDC} names of the matterport."
+        )
 
         WORDS = [f"{cmd} " for cmds in COMMANDS.values() for cmd in cmds]
         keys = sorted(list(downloads.keys()), key=lambda k: downloads[k].lower())
@@ -253,12 +295,16 @@ def interactiveManagerGetToServe(downloadDir, matterportArgs):
                 itemName = f"{downloads[key]} ({itemName})"
             print(f"[{i}] {itemName}")
 
-        print(f"{bcolors.BOLD}Ctrl-C{bcolors.ENDC} to {bcolors.BOLD}exit{bcolors.ENDC}.")
+        print(
+            f"{bcolors.BOLD}Ctrl-C{bcolors.ENDC} to {bcolors.BOLD}exit{bcolors.ENDC}."
+        )
 
         print_separator()
         try:
             answer = input("input: ")
-        except EOFError or KeyboardInterrupt:  # ^C or ^D to exit (POSIX-based), actually keyboard interrupt wont be raised by our default signal handler
+        except (
+            EOFError or KeyboardInterrupt
+        ):  # ^C or ^D to exit (POSIX-based), actually keyboard interrupt wont be raised by our default signal handler
             print()
             sys.exit(130)
         command, arg = parse_command(answer)
