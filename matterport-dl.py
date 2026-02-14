@@ -474,6 +474,50 @@ def extractJSDict(forWhat: str, str: str):
         ret[f"{key}"] = arr[1]
     return ret
 
+def parseDynamicImports(contents):
+    jsFiles = set()
+    imageFiles = set()
+    for content in contents:
+        # Matches dynamic imports stored in a string to tuple map: { str: [num, num] } (Ex { "./showcase_en-US.yaml": [18539, 8539], }).
+        # String map key seems to be the asset it might help load. First tuple number might be chunk id and last is the js filename.
+        # If it's an svg, we need to download this asset, otherwise the yaml files seem like they're inlined in the js chunk file or not needed
+        match = re.findall(r'var\s+n\s*=\s*\{((?:\s*"[^"]+":\s*\[\d+,\s*\d+\],?)+)\s*\}', content, re.X)
+
+        for m in match:
+            innerMatches = re.finditer(r'"([^"]+)":\[\d+,(\d+)\]', m, re.X)
+            for innerMatch in innerMatches:
+                assetFilename, jsFilename = innerMatch.groups()
+                if assetFilename.endswith(".svg"):
+                    imageFiles.add(assetFilename.removeprefix("./"))
+                jsFiles.add(jsFilename)
+
+        # Matches dynamic imports using the function "i.e(\d+)"
+        match = re.findall(r"i\.e\((\d+)\)", content, re.X)
+
+        if match is None:
+            raise Exception("Unable to extract js chunk files from main showcase file")
+
+        jsFiles.update(match)
+    
+    return [jsFiles, imageFiles]
+
+def getPreloadJson(base_page_text):
+    match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
+    preload_json_str = None
+    if not match:
+        match = re.search(r"window.MP_PREFETCHED_MODELDATA = parseJSON\((\"\{.+?\}\}\}\")\);", base_page_text)  # this happens for extra unicode encoded pages
+        consoleDebugLog("Main page embedded preset data was unicode/parseJSON passed instead of normal")
+        if not match:
+            logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
+            consoleLog("###### UNABLE to extract pre-fetch data from main page, will try to proceed but likely have issues", logging.WARNING)
+        else:
+            preload_json_str = json.loads(match.group(1))  # yes we load it here first, it is a string passed to parseJson so this basically unescapes that string into preload_json_str which will then be loaded again later
+    else:
+        preload_json_str = match.group(1)
+        
+    if preload_json_str is None:
+        return None
+    return json.loads(preload_json_str)  # in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
 
 async def downloadAssets(base, base_page_text):
     global PROGRESS, BASE_MATTERPORT_DOMAIN, MAIN_SHOWCASE_FILENAME
@@ -497,15 +541,17 @@ async def downloadAssets(base, base_page_text):
     # now they use module imports as well like: import(importBase + 'js/runtime~showcase.69d7273003fd73b7a8f3.js'),
 
     import_js_loads = re.findall(r'import\([^\'\"()]*[\'"]([^\'"()]+\.js)[\'"]\s*\)', base_page_text, flags=re.IGNORECASE)
+    base_page_js_loads.extend(import_js_loads)
 
-    for js in import_js_loads:
-        base_page_js_loads.append(js)
+    # Additional dynamic assets we need to load upfront
+    base_page_js_loads.extend(['js/init.js'])
 
     typeDict: dict[str, str] = {}
     for asset in assets:
         typeDict[asset] = "STATIC_ASSET"
 
     showcase_runtime_filename: str = None
+    init_filename: str = None
     react_vendor_filename: str = None
 
     if CLA.getCommandLineArg(CommandLineArg.DEBUG):
@@ -525,7 +571,8 @@ async def downloadAssets(base, base_page_text):
                 showcase_runtime_filename = file
             else:
                 MAIN_SHOWCASE_FILENAME = file
-                assets.append(file)
+        elif "init" in js:
+            init_filename = file
 
         else:
             if "vendors-react" in js:
@@ -538,6 +585,16 @@ async def downloadAssets(base, base_page_text):
         raise Exception("In all js files found on the page could not find any that have vendors-react in the filename for the react vendor js file")
     await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    showcase_main_cont = await downloadFileAndGetText(typeDict[MAIN_SHOWCASE_FILENAME], True, base + MAIN_SHOWCASE_FILENAME, MAIN_SHOWCASE_FILENAME, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    init_cont = await downloadFileAndGetText(typeDict[init_filename], True, base + init_filename, init_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    dynamic_import_js_files, dynamic_image_files = parseDynamicImports([showcase_main_cont, init_cont])
+
+    for key in dynamic_import_js_files:
+        file = f"js/{key}.js"
+        typeDict[file] = "DYNAMIC_IMPORTS_JS"
+        assets.append(file)
+
+    image_files.extend(dynamic_image_files)
 
     # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
     # js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
@@ -562,7 +619,7 @@ async def downloadAssets(base, base_page_text):
         r"""
                 "js/"\+ # find js/+  (literal plus)
                 (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
-                (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
+                .+?
                 css #stopping when we see the css
                 (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
                 .+? #skip the minimum amount to get to next part
@@ -578,15 +635,11 @@ async def downloadAssets(base, base_page_text):
         raise Exception("Unable to extract js files and css files from showcase runtime js file")
     groupDict = match.groupdict()
     jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"])
-    jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"])
     cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles", groupDict["namedCSSFiles"])
     cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"])
 
-    for number, key in jsKeyDict.items():
-        name = number
-        if name in jsNamedDict:
-            name = jsNamedDict[name]
-        file = f"js/{name}.{key}.js"
+    for number, key in jsNamedDict.items():
+        file = f"js/{key}.js"
         typeDict[file] = "SHOWCASE_DISCOVERED_JS"
         assets.append(file)
 
@@ -719,13 +772,43 @@ async def downloadInfo(pageid):
         KeyHandler.SaveKeysFromText(f"FilesType{i}", fileText)  # used to be more elegant but now we can just gobble all the keys
 
 
-async def downloadPlugins(pageid):
+# Plugins look at the policies list if their required policies have a namespace value and groups if it's a non-namespace string for allowed versions
+# Groups will be something like "experimental", whereas allowed policies are like "org.spaces.importtags"
+def getLatestPluginVersion(plugin, groups, allowedPolicies):
+    versions = plugin["versions"]
+    for version in versions:
+        requiredPolicies = versions[version]["requiredPolicies"]
+        if len(requiredPolicies) == 0:
+            return version
+
+        # If all required policies pass the check against allowed policies/groups, return the version
+        isAllowed = True
+        for policy in requiredPolicies:
+            if "." in policy:
+                if policy not in allowedPolicies:
+                    isAllowed = False
+                    break
+            elif policy not in groups:
+                isAllowed = False
+                break
+
+        if isAllowed:
+            return version
+    return None
+
+async def downloadPlugins(groups, allowedPolicies):
     global BASE_MATTERPORT_DOMAIN
     pluginJson: Any
     with open("api/v1/plugins", "r", encoding="UTF-8") as f:
         pluginJson = json.loads(f.read())
     for plugin in pluginJson:
-        plugPath = f"showcase-sdk/plugins/published/{plugin['name']}/{plugin['currentVersion']}/plugin.json"
+        currentVersion = getLatestPluginVersion(plugin, groups, allowedPolicies)
+        consoleDebugLog(f"Allowed plugin version: {plugin['name']} {currentVersion}", loglevel=logging.INFO)
+        if currentVersion is None:
+            consoleDebugLog(f"Plugin doesn't have a version allowed by this page, skipping {plugin['name']}", loglevel=logging.INFO)
+            continue
+
+        plugPath = f"showcase-sdk/plugins/published/{plugin['name']}/{currentVersion}/plugin.json"
         await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
 
 
@@ -948,8 +1031,9 @@ async def downloadCapture(pageid):
         exit(0)
 
     consoleLog("Downloading Advanced Assets...")
+    preload_json = getPreloadJson(base_page_text)
     if CLA.getCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD):
-        await AdvancedAssetDownload(base_page_text)
+        await AdvancedAssetDownload(base_page_text, preload_json)
 
     consoleLog("Downloading static files...")
     await downloadAssets(staticbase, base_page_text)
@@ -957,7 +1041,22 @@ async def downloadCapture(pageid):
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
     consoleLog("Downloading plugins...")
-    await downloadPlugins(pageid)
+    policies: list = preload_json["queries"]["GetRootPrefetch"]["data"]["model"]["policies"]
+    groupsPolicy = next(filter(lambda policy: policy["name"] == "spaces.plugins.groups", policies), None)
+    groups = []
+    if groupsPolicy is not None:
+        groups = groupsPolicy["options"] or []
+
+    filteredPolicyNames = set()
+    for policy in policies:
+        if policy["name"] == "spaces.plugins.groups":
+            continue
+        
+        # Cases for PolicyValue, PolicyOptions, PolicyValue, and PolicyFeature types
+        if ("availability" not in policy and "enabled" not in policy) or ("availability" in policy and policy["availability"] not in ["blocked", "disabled"]) or ("enabled" in policy and policy["enabled"] != False):
+            filteredPolicyNames.add(policy["name"])
+
+    await downloadPlugins(groups, filteredPolicyNames)
     if not MODEL_IS_DEFURNISHED:
         consoleLog("Downloading images...")
         await downloadPics(pageid)
@@ -1034,7 +1133,7 @@ def GenerateCrops(jpgFilePath):
     return howMany
 
 
-async def AdvancedAssetDownload(base_page_text: str):
+async def AdvancedAssetDownload(base_page_text: str, preload_json: json):
     global MODEL_IS_DEFURNISHED, BASE_MODEL_ID, SWEEP_DO_4K
     ADV_CROP_FETCH = [{"start": "width=512&crop=1024,1024,", "increment": "0.5"}, {"start": "crop=512,512,", "increment": "0.25"}]
     consoleLog("Doing advanced download of dollhouse/floorplan data...")
@@ -1063,21 +1162,7 @@ async def AdvancedAssetDownload(base_page_text: str):
         except Exception:
             logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
 
-        match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
-        preload_json_str = None
-        if not match:
-            match = re.search(r"window.MP_PREFETCHED_MODELDATA = parseJSON\((\"\{.+?\}\}\}\")\);", base_page_text)  # this happens for extra unicode encoded pages
-            consoleDebugLog("Main page embedded preset data was unicode/parseJSON passed instead of normal")
-            if not match:
-                logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
-                consoleLog("###### UNABLE to extract pre-fetch data from main page, will try to proceed but likely have issues", logging.WARNING)
-            else:
-                preload_json_str = json.loads(match.group(1))  # yes we load it here first, it is a string passed to parseJson so this basically unescapes that string into preload_json_str which will then be loaded again later
-        else:
-            preload_json_str = match.group(1)
-
-        if preload_json_str is not None:
-            preload_json = json.loads(preload_json_str)  # in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
+        if preload_json is not None:
             base_cache_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("base_page_extracted_json.json", json.dumps(preload_json, indent="\t"))  # noqa: E701
