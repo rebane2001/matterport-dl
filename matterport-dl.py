@@ -275,6 +275,10 @@ async def downloadFileAndGetText(type, shouldExist, url, file, post_data=None, i
             return await f.read()
 
 
+MAX_429_RETRIES = 5  # max retries for rate-limited (429) responses
+INITIAL_429_BACKOFF = 2.0  # initial backoff in seconds, doubles each retry
+
+
 # Add type parameter, shortResourcePath, shouldExist
 async def downloadFile(type, shouldExist, url, file, post_data=None, always_download=False, key_type: AccessKeyType = AccessKeyType.PrimaryKey):
     global MAX_TASKS_SEMAPHORE, OUR_SESSION
@@ -306,6 +310,26 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
             logUrlDownloadFinish(type, file, url, "", shouldExist, reqId)
             return
         except Exception as err:
+            # Retry on 429 (rate limit) with exponential backoff
+            if "Error 429" in f"{err}":
+                backoff = INITIAL_429_BACKOFF
+                for attempt in range(MAX_429_RETRIES):
+                    consoleDebugLog(f"Rate limited (429), retrying {file} in {backoff:.0f}s (attempt {attempt + 1}/{MAX_429_RETRIES})")
+                    await asyncio.sleep(backoff)
+                    try:
+                        response = await OUR_SESSION.get(url)
+                        response.raise_for_status()
+                        async with aiofiles.open(file, "wb") as f:
+                            await f.write(response.content)
+                        logUrlDownloadFinish(type, file, url, "", shouldExist, reqId)
+                        return
+                    except Exception as retry_err:
+                        if "Error 429" not in f"{retry_err}":
+                            err = retry_err
+                            break
+                        err = retry_err
+                        backoff *= 2
+
             # Try again but with different accesskeys, if error is 404 though no need to retry
             if "?t=" in url and "Error 404" not in f"{err}":
                 if False:  # disable brute forcing at a minimum probably shouldnt do getallkeys just primary
@@ -328,7 +352,10 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
 
 
 def validUntilFix(text):
-    return re.sub(r"validUntil\"\s*:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', text)
+    # Handle both normal JSON ("validUntil" : "2026-...") and escaped JSON (validUntil\":\"2026-...) as found in embedded HTML preload data
+    text = re.sub(r"validUntil\"\s*:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', text)
+    text = re.sub(r'validUntil\\"\s*:\s*\\"20[\d]{2}-[\d]{2}-[\d]{2}T', 'validUntil\\":\\"2099-01-01T', text)
+    return text
 
 
 async def downloadGraphModels(pageid):
@@ -352,6 +379,30 @@ async def downloadGraphModels(pageid):
             text = text.replace(f"https://cdn-1.{BASE_MATTERPORT_DOMAIN}", "http://127.0.0.1:8080")  # without the localhost it seems like it may try to do diff
         text = validUntilFix(text)
 
+        async with aiofiles.open(getModifiedName(file_path), "w", encoding="UTF-8") as f:
+            await f.write(text)
+
+    # Download GetLayers for each defurnish view and the main model view - the showcase JS requests these using viewId (not modelId)
+    layers_hash = "364a90e772117dcf29bf53827f2d8802c0cced1115559d552deeacc44f4883e6"
+    layers_view_ids = [pageid]  # always download for the main model
+    try:
+        sweeps_file = "api/mp/models/graph_GetSweeps.json"
+        if not os.path.exists(sweeps_file):
+            sweeps_file = "api/mp/models/graph_GetShowcaseSweeps.json"
+        if os.path.exists(sweeps_file):
+            with open(sweeps_file, "r", encoding="UTF-8") as f:
+                sweeps_data = json.loads(f.read())
+            for dv in sweeps_data.get("data", {}).get("model", {}).get("defurnishViews", []):
+                if dv and "model" in dv and "id" in dv["model"]:
+                    layers_view_ids.append(dv["model"]["id"])
+    except Exception:
+        logging.exception("Unable to extract defurnish view IDs for GetLayers download")
+
+    for view_id in layers_view_ids:
+        file_path = "api/mp/models/graph_GetLayers.json"
+        req_url = f"?operationName=GetLayers&variables=%7B%22viewId%22%3A%22{view_id}%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22{layers_hash}%22%7D%7D"
+        text = await downloadFileAndGetText("GRAPH_MODEL", True, f"https://my.{BASE_MATTERPORT_DOMAIN}/api/mp/models/graph{req_url}", file_path, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES) and CLA.getCommandLineArg(CommandLineArg.ALWAYS_DOWNLOAD_GRAPH_REQS))
+        text = validUntilFix(text)
         async with aiofiles.open(getModifiedName(file_path), "w", encoding="UTF-8") as f:
             await f.write(text)
 
@@ -474,6 +525,50 @@ def extractJSDict(forWhat: str, str: str):
         ret[f"{key}"] = arr[1]
     return ret
 
+def parseDynamicImports(contents):
+    jsFiles = set()
+    imageFiles = set()
+    for content in contents:
+        # Matches dynamic imports stored in a string to tuple map: { str: [num, num] } (Ex { "./showcase_en-US.yaml": [18539, 8539], }).
+        # String map key seems to be the asset it might help load. First tuple number might be chunk id and last is the js filename.
+        # If it's an svg, we need to download this asset, otherwise the yaml files seem like they're inlined in the js chunk file or not needed
+        match = re.findall(r'var\s+n\s*=\s*\{((?:\s*"[^"]+":\s*\[\d+,\s*\d+\],?)+)\s*\}', content, re.X)
+
+        for m in match:
+            innerMatches = re.finditer(r'"([^"]+)":\[\d+,(\d+)\]', m, re.X)
+            for innerMatch in innerMatches:
+                assetFilename, jsFilename = innerMatch.groups()
+                if assetFilename.endswith(".svg"):
+                    imageFiles.add(assetFilename.removeprefix("./"))
+                jsFiles.add(jsFilename)
+
+        # Matches dynamic imports using the function "i.e(\d+)"
+        match = re.findall(r"i\.e\((\d+)\)", content, re.X)
+
+        if match is None:
+            raise Exception("Unable to extract js chunk files from main showcase file")
+
+        jsFiles.update(match)
+    
+    return [jsFiles, imageFiles]
+
+def getPreloadJson(base_page_text):
+    match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
+    preload_json_str = None
+    if not match:
+        match = re.search(r"window.MP_PREFETCHED_MODELDATA = parseJSON\((\"\{.+?\}\}\}\")\);", base_page_text)  # this happens for extra unicode encoded pages
+        consoleDebugLog("Main page embedded preset data was unicode/parseJSON passed instead of normal")
+        if not match:
+            logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
+            consoleLog("###### UNABLE to extract pre-fetch data from main page, will try to proceed but likely have issues", logging.WARNING)
+        else:
+            preload_json_str = json.loads(match.group(1))  # yes we load it here first, it is a string passed to parseJson so this basically unescapes that string into preload_json_str which will then be loaded again later
+    else:
+        preload_json_str = match.group(1)
+        
+    if preload_json_str is None:
+        return None
+    return json.loads(preload_json_str)  # in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
 
 async def downloadAssets(base, base_page_text):
     global PROGRESS, BASE_MATTERPORT_DOMAIN, MAIN_SHOWCASE_FILENAME
@@ -485,7 +580,7 @@ async def downloadAssets(base, base_page_text):
     font_files = ["ibm-plex-sans-100", "ibm-plex-sans-100italic", "ibm-plex-sans-200", "ibm-plex-sans-200italic", "ibm-plex-sans-300", "ibm-plex-sans-300italic", "ibm-plex-sans-500", "ibm-plex-sans-500italic", "ibm-plex-sans-600", "ibm-plex-sans-600italic", "ibm-plex-sans-700", "ibm-plex-sans-700italic", "ibm-plex-sans-italic", "ibm-plex-sans-regular", "mp-font", "roboto-100", "roboto-100italic", "roboto-300", "roboto-300italic", "roboto-500", "roboto-500italic", "roboto-700", "roboto-700italic", "roboto-900", "roboto-900italic", "roboto-italic", "roboto-regular"]
 
     # extension assumed to be .png unless it is .svg or .jpg, for anything else place it in assets
-    image_files = ["360_placement_pin_mask", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior", "exterior_hover", "firefox", "interior", "interior_hover", "matterport-logo-light.svg", "matterport-logo.svg", "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag", "nav_help_gesture_drag_two_finger", "nav_help_gesture_pinch", "nav_help_gesture_position", "nav_help_gesture_position_two_finger", "nav_help_gesture_tap", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down", "nav_help_mouse_click", "nav_help_mouse_ctrl_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_position_left", "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "pinAnchor", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "vert_arrows", "headset-quest-2", "tagColor", "matterport-app-icon.svg"]
+    image_files = ["360_placement_pin_mask", "atlas", "chrome", "Desktop-help-play-button.svg", "Desktop-help-spacebar", "edge", "escape", "exterior", "exterior_hover", "firefox", "interior", "interior_hover", "login-screen-background.jpg", "logo-white.svg", "logo-white-r.svg", "matterport-logo-light.svg", "matterport-logo.svg", "matterport-logo-white-r.svg", "mattertag-disc-128-free.v1", "mobile-help-play-button.svg", "nav_help_360", "nav_help_click_inside", "nav_help_gesture_drag", "nav_help_gesture_drag.svg", "nav_help_gesture_drag_two_finger", "nav_help_gesture_drag_two_finger_rotate.svg", "nav_help_gesture_drag_two_finger_vert.svg", "nav_help_gesture_pinch", "nav_help_gesture_pinch.svg", "nav_help_gesture_position", "nav_help_gesture_position_two_finger", "nav_help_gesture_tap", "nav_help_gesture_tap.svg", "nav_help_inside_key", "nav_help_keyboard_all", "nav_help_keyboard_left_right", "nav_help_keyboard_up_down", "nav_help_mouse_click", "nav_help_mouse_click.svg", "nav_help_mouse_ctrl_click", "nav_help_mouse_drag_left", "nav_help_mouse_drag_right", "nav_help_mouse_drag_right_horiz.svg", "nav_help_mouse_drag_right_vert.svg", "nav_help_mouse_position_left", "nav_help_mouse_position_left.svg", "nav_help_mouse_position_right", "nav_help_mouse_zoom", "nav_help_mouse_zoom.svg", "nav_help_tap_inside", "nav_help_zoom_keys", "NoteColor", "pinAnchor", "safari", "scope.svg", "showcase-password-background.jpg", "surface_grid_planar_256", "vert_arrows", "headset-quest-2", "tagColor", "matterport-app-icon.svg"]
 
     assets = ["js/browser-check.js", "css/showcase.css", "css/packages-nova-ui.css", "css/scene.css", "css/unsupported_browser.css", "cursors/grab.png", "cursors/grabbing.png", "cursors/zoom-in.png", "cursors/zoom-out.png", "locale/strings.json", "css/ws-blur.css", "css/core.css", "css/late.css"]
 
@@ -497,15 +592,17 @@ async def downloadAssets(base, base_page_text):
     # now they use module imports as well like: import(importBase + 'js/runtime~showcase.69d7273003fd73b7a8f3.js'),
 
     import_js_loads = re.findall(r'import\([^\'\"()]*[\'"]([^\'"()]+\.js)[\'"]\s*\)', base_page_text, flags=re.IGNORECASE)
+    base_page_js_loads.extend(import_js_loads)
 
-    for js in import_js_loads:
-        base_page_js_loads.append(js)
+    # Additional dynamic assets we need to load upfront
+    base_page_js_loads.extend(['js/init.js'])
 
     typeDict: dict[str, str] = {}
     for asset in assets:
         typeDict[asset] = "STATIC_ASSET"
 
     showcase_runtime_filename: str = None
+    init_filename: str = None
     react_vendor_filename: str = None
 
     if CLA.getCommandLineArg(CommandLineArg.DEBUG):
@@ -525,7 +622,8 @@ async def downloadAssets(base, base_page_text):
                 showcase_runtime_filename = file
             else:
                 MAIN_SHOWCASE_FILENAME = file
-                assets.append(file)
+        elif "init" in js:
+            init_filename = file
 
         else:
             if "vendors-react" in js:
@@ -538,6 +636,16 @@ async def downloadAssets(base, base_page_text):
         raise Exception("In all js files found on the page could not find any that have vendors-react in the filename for the react vendor js file")
     await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    showcase_main_cont = await downloadFileAndGetText(typeDict[MAIN_SHOWCASE_FILENAME], True, base + MAIN_SHOWCASE_FILENAME, MAIN_SHOWCASE_FILENAME, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    init_cont = await downloadFileAndGetText(typeDict[init_filename], True, base + init_filename, init_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+    dynamic_import_js_files, dynamic_image_files = parseDynamicImports([showcase_main_cont, init_cont])
+
+    for key in dynamic_import_js_files:
+        file = f"js/{key}.js"
+        typeDict[file] = "DYNAMIC_IMPORTS_JS"
+        assets.append(file)
+
+    image_files.extend(dynamic_image_files)
 
     # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
     # js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
@@ -562,7 +670,7 @@ async def downloadAssets(base, base_page_text):
         r"""
                 "js/"\+ # find js/+  (literal plus)
                 (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
-                (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
+                .+?
                 css #stopping when we see the css
                 (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
                 .+? #skip the minimum amount to get to next part
@@ -578,15 +686,11 @@ async def downloadAssets(base, base_page_text):
         raise Exception("Unable to extract js files and css files from showcase runtime js file")
     groupDict = match.groupdict()
     jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"])
-    jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"])
     cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles", groupDict["namedCSSFiles"])
     cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"])
 
-    for number, key in jsKeyDict.items():
-        name = number
-        if name in jsNamedDict:
-            name = jsNamedDict[name]
-        file = f"js/{name}.{key}.js"
+    for number, key in jsNamedDict.items():
+        file = f"js/{key}.js"
         typeDict[file] = "SHOWCASE_DISCOVERED_JS"
         assets.append(file)
 
@@ -719,13 +823,43 @@ async def downloadInfo(pageid):
         KeyHandler.SaveKeysFromText(f"FilesType{i}", fileText)  # used to be more elegant but now we can just gobble all the keys
 
 
-async def downloadPlugins(pageid):
+# Plugins look at the policies list if their required policies have a namespace value and groups if it's a non-namespace string for allowed versions
+# Groups will be something like "experimental", whereas allowed policies are like "org.spaces.importtags"
+def getLatestPluginVersion(plugin, groups, allowedPolicies):
+    versions = plugin["versions"]
+    for version in versions:
+        requiredPolicies = versions[version]["requiredPolicies"]
+        if len(requiredPolicies) == 0:
+            return version
+
+        # If all required policies pass the check against allowed policies/groups, return the version
+        isAllowed = True
+        for policy in requiredPolicies:
+            if "." in policy:
+                if policy not in allowedPolicies:
+                    isAllowed = False
+                    break
+            elif policy not in groups:
+                isAllowed = False
+                break
+
+        if isAllowed:
+            return version
+    return None
+
+async def downloadPlugins(groups, allowedPolicies):
     global BASE_MATTERPORT_DOMAIN
     pluginJson: Any
     with open("api/v1/plugins", "r", encoding="UTF-8") as f:
         pluginJson = json.loads(f.read())
     for plugin in pluginJson:
-        plugPath = f"showcase-sdk/plugins/published/{plugin['name']}/{plugin['currentVersion']}/plugin.json"
+        currentVersion = getLatestPluginVersion(plugin, groups, allowedPolicies)
+        consoleDebugLog(f"Allowed plugin version: {plugin['name']} {currentVersion}", loglevel=logging.INFO)
+        if currentVersion is None:
+            consoleDebugLog(f"Plugin doesn't have a version allowed by this page, skipping {plugin['name']}", loglevel=logging.INFO)
+            continue
+
+        plugPath = f"showcase-sdk/plugins/published/{plugin['name']}/{currentVersion}/plugin.json"
         await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
 
 
@@ -948,8 +1082,9 @@ async def downloadCapture(pageid):
         exit(0)
 
     consoleLog("Downloading Advanced Assets...")
+    preload_json = getPreloadJson(base_page_text)
     if CLA.getCommandLineArg(CommandLineArg.ADVANCED_DOWNLOAD):
-        await AdvancedAssetDownload(base_page_text)
+        await AdvancedAssetDownload(base_page_text, preload_json)
 
     consoleLog("Downloading static files...")
     await downloadAssets(staticbase, base_page_text)
@@ -957,7 +1092,22 @@ async def downloadCapture(pageid):
     # Patch showcase.js to fix expiration issue and some other changes for local hosting
     patchShowcase()
     consoleLog("Downloading plugins...")
-    await downloadPlugins(pageid)
+    policies: list = preload_json["queries"]["GetRootPrefetch"]["data"]["model"]["policies"]
+    groupsPolicy = next(filter(lambda policy: policy["name"] == "spaces.plugins.groups", policies), None)
+    groups = []
+    if groupsPolicy is not None:
+        groups = groupsPolicy["options"] or []
+
+    filteredPolicyNames = set()
+    for policy in policies:
+        if policy["name"] == "spaces.plugins.groups":
+            continue
+        
+        # Cases for PolicyValue, PolicyOptions, PolicyValue, and PolicyFeature types
+        if ("availability" not in policy and "enabled" not in policy) or ("availability" in policy and policy["availability"] not in ["blocked", "disabled"]) or ("enabled" in policy and policy["enabled"] != False):
+            filteredPolicyNames.add(policy["name"])
+
+    await downloadPlugins(groups, filteredPolicyNames)
     if not MODEL_IS_DEFURNISHED:
         consoleLog("Downloading images...")
         await downloadPics(pageid)
@@ -1034,7 +1184,7 @@ def GenerateCrops(jpgFilePath):
     return howMany
 
 
-async def AdvancedAssetDownload(base_page_text: str):
+async def AdvancedAssetDownload(base_page_text: str, preload_json: json):
     global MODEL_IS_DEFURNISHED, BASE_MODEL_ID, SWEEP_DO_4K
     ADV_CROP_FETCH = [{"start": "width=512&crop=1024,1024,", "increment": "0.5"}, {"start": "crop=512,512,", "increment": "0.25"}]
     consoleLog("Doing advanced download of dollhouse/floorplan data...")
@@ -1063,21 +1213,7 @@ async def AdvancedAssetDownload(base_page_text: str):
         except Exception:
             logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
 
-        match = re.search(r"window.MP_PREFETCHED_MODELDATA = (\{.+?\}\}\});", base_page_text)
-        preload_json_str = None
-        if not match:
-            match = re.search(r"window.MP_PREFETCHED_MODELDATA = parseJSON\((\"\{.+?\}\}\}\")\);", base_page_text)  # this happens for extra unicode encoded pages
-            consoleDebugLog("Main page embedded preset data was unicode/parseJSON passed instead of normal")
-            if not match:
-                logging.exception("Unable to open graph model for snapshots output json something probably wrong.....")
-                consoleLog("###### UNABLE to extract pre-fetch data from main page, will try to proceed but likely have issues", logging.WARNING)
-            else:
-                preload_json_str = json.loads(match.group(1))  # yes we load it here first, it is a string passed to parseJson so this basically unescapes that string into preload_json_str which will then be loaded again later
-        else:
-            preload_json_str = match.group(1)
-
-        if preload_json_str is not None:
-            preload_json = json.loads(preload_json_str)  # in theory this json should be similar to GetModelDetails, sometimes it is a bit different so we may want to switch
+        if preload_json is not None:
             base_cache_node = preload_json["queries"]["GetModelPrefetch"]["data"]["model"]
         if CLA.getCommandLineArg(CommandLineArg.DEBUG):
             DebugSaveFile("base_page_extracted_json.json", json.dumps(preload_json, indent="\t"))  # noqa: E701
@@ -1377,18 +1513,27 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
     def do_GraphRequest(self, option_name: str):
         post_msg = None
         logLevel = logging.INFO
-        if option_name in GRAPH_DATA_REQ:
+        file_path = f"api/mp/models/graph_{option_name}.json"
+        modified_file_path = f"api/mp/models/graph_{option_name}.modified.json"
+        # Prefer the modified file (has localhost URLs and extended validUntil)
+        serve_path = modified_file_path if os.path.exists(modified_file_path) else file_path
+        if option_name in GRAPH_DATA_REQ or os.path.exists(serve_path):
             self.send_response(200)
             self.end_headers()
-            file_path = f"api/mp/models/graph_{option_name}.json"
-            if os.path.exists(file_path):
-                with open(file_path, "r", encoding="UTF-8") as f:
+            if os.path.exists(serve_path):
+                with open(serve_path, "r", encoding="UTF-8") as f:
                     self.wfile.write(f.read().encode("utf-8"))
-                    post_msg = f"graph of operationName: {option_name} we are handling internally"
+                    post_msg = f"graph of operationName: {option_name} we are handling internally (from {os.path.basename(serve_path)})"
             else:
                 logLevel = logging.WARNING
                 post_msg = f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead. If you get an error this may be why (include this message in bug report)."
                 self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
+        else:
+            self.send_response(200)
+            self.end_headers()
+            logLevel = logging.WARNING
+            post_msg = f"graph for operationName: {option_name} is unknown and has no cached file, returning empty data."
+            self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
 
         if post_msg is not None:
             consoleDebugLog(f"Handling a graph request on {self.path}: {post_msg}", loglevel=logLevel)
@@ -1423,10 +1568,12 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
 GRAPH_DATA_REQ = {
     "GetModelDetails": "?operationName=GetModelDetails&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22012c3d36cdf890ba8e49dfd66b1072a2dbb573e672d72482eff86a2563530f46%22%7D%7D",
-    "GetModelViewPrefetch": "?operationName=GetModelViewPrefetch&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%2C%22includeDisabled%22%3Afalse%2C%22includeLayers%22%3Atrue%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22ed65e7307756d949f0e7cdab0cf79ee0b0797cc9c494d8811a2bb3025cd7bce6%22%7D%7D",
-    "GetRoomBounds": "?operationName=GetRoomBounds&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2214f99a0c44512f435987f1305eacdaea7ca600f2b5e9022499087188e63915aa%22%7D%7D",
+    "GetModelViewPrefetch": "?operationName=GetModelViewPrefetch&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%2C%22includeDisabled%22%3Afalse%2C%22includeLayers%22%3Atrue%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22f4b148f7021163defd3fbe7d358ab536538a78e851b9a28e4f0f7dc13f718ea7%22%7D%7D",
+    "GetRoomBounds": "?operationName=GetRoomBounds&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22bfb7c34735bc577d52b18e41e463546871bded2ba339e61c66ae3a03c013e9b9%22%7D%7D",
     "GetShowcaseSweeps": "?operationName=GetShowcaseSweeps&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%220faff869a8ae9385fe262d18ea1f731bbbeb3d618c036e60a8d0d630ae3526a5%22%7D%7D",
-    "GetSnapshots": "?operationName=GetSnapshots&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22510bd772b16a48aa4ea74aa290373225eeb306b3162fa34c75d6f643daf3f22b%22%7D%7D",
+    "GetSnapshots": "?operationName=GetSnapshots&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%226cc214b557ce3a722b973e119b784c245cae184fc099db44c17ccf3704aeeea2%22%7D%7D",
+    "GetModelAssets": "?operationName=GetModelAssets&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2288fcfb6cb48b4c99c53623b3d939da42da1a700014fe1e926ba6f14f49b777c2%22%7D%7D",
+    "GetSweeps": "?operationName=GetSweeps&variables=%7B%22sweepIds%22%3Anull%2C%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%2C%22sweepTags%22%3A%5B%22showcase%22%5D%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22f7f1c9ec3e99b6579e76291da523de689c07d5e2c421f4ab82cf826b19af2427%22%7D%7D",
     # the following normally only seen on defurnished views directly
     "GetRoomClassifications": "?operationName=GetRoomClassifications&variables=%7B%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22fdfefe83b3f6c491b0b76576b34366278274c92b36324bef4dd299d39fb986f3%22%7D%7D",  # yes get room classificaitons does not take a model id
     "GetRooms": "?operationName=GetRooms&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%223743bbb80ad617297c8e8c943499144b8ff20840a5c1fd48e5d3d131d915ed3a%22%7D%7D",
