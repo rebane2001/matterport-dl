@@ -204,6 +204,49 @@ async def downloadSweeps(accessurl: str, sweeps: list[str]):
     await AsyncArrayDownload(toDownload)
 
 
+async def downloadOverlaySweeps(preload_json, sweeps: list[str]):
+    """Download overlay-layer tiles for defurnished/furnished-toggle models.
+
+    matterport-dl's downloadSweeps() only fetches main-path tiles (assets/~/tiles/<sweep>/...).
+    Models with overlayLayers (furnished/defurnished rendering toggle) also need tiles under
+    assets/overlay/<overlay_uuid>/~/tiles/<sweep>/... . Those template URLs live in
+    window.MP_PREFETCHED_MODELDATA inside index.html and carry directory-scoped signatures
+    that authorize the entire overlay subtree with a single token.
+
+    Symptoms when these tiles are missing: some panorama pins spin forever or load at blurry
+    512-px fallback while other sweeps (without overlay) work fine.
+    """
+    if preload_json is None:
+        return
+    # Collect one dir-scoped signature per overlay UUID by scanning the prefetch for tile templates
+    text = json.dumps(preload_json)
+    pattern = re.compile(r'https?://[^/\s"]+/(models/[^/]+/assets/overlay/([a-f0-9]+))/~/tiles/[a-f0-9]+/\d+k?_face<face>_<x>_<y>\.jpg(\?[^"\s]+)')
+    overlays = {}  # ol_uuid -> (base_path, query_string)
+    for m in pattern.finditer(text):
+        base_path = m.group(1)
+        ol_uuid = m.group(2)
+        query = m.group(3)
+        if ol_uuid not in overlays:
+            overlays[ol_uuid] = (base_path, query)
+
+    if not overlays:
+        return
+
+    consoleLog(f"Found {len(overlays)} overlay layer(s); queuing overlay tile downloads for {len(sweeps)} sweeps")
+    toDownload: list[AsyncDownloadItem] = []
+    for ol_uuid, (base_path, query) in overlays.items():
+        for sweep in sweeps:
+            sweep = sweep.replace("-", "")
+            for variant in getVariants():
+                rel_file = f"{base_path}/~/tiles/{sweep}/{variant}"
+                if not CLA.getCommandLineArg(CommandLineArg.TILDE):
+                    rel_file = rel_file.replace("~", "_")
+                abs_url = f"https://cdn-2.matterport.com/{base_path}/~/tiles/{sweep}/{variant}{query}&imgopt=1"
+                # shouldExist=False since only some sweeps are rendered in each overlay layer; 404s are normal
+                toDownload.append(AsyncDownloadItem("MODEL_SWEEPS_OVERLAY", False, abs_url, rel_file, key_type=AccessKeyType.LeaveKeyAlone))
+    await AsyncArrayDownload(toDownload)
+
+
 # these 3 downwload with json posts were old functions for old graphql queries we dont need/use ducrrently
 async def downloadFileWithJSONPostAndGetText(type, shouldExist, url, file, post_json_str, descriptor, always_download=False):
     if not CLA.getCommandLineArg(CommandLineArg.TILDE):
@@ -726,7 +769,11 @@ async def downloadPlugins(pageid):
         pluginJson = json.loads(f.read())
     for plugin in pluginJson:
         plugPath = f"showcase-sdk/plugins/published/{plugin['name']}/{plugin['currentVersion']}/plugin.json"
-        await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
+        try:
+            await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
+        except Exception as e:
+            consoleDebugLog(f"Plugin {plugin['name']} v{plugin['currentVersion']} fetch failed (Matterport CDN may have purged this version), skipping: {e}", loglevel=logging.WARNING)
+            continue
 
 
 async def downloadAttachments():
@@ -793,6 +840,15 @@ async def downloadMainAssets(pageid, accessurl):
     # now: getShowcaseSweeps then need to iterate the locatiosn and get the uuid data.model.locations[0].pano.sweepUuid  this would resolve many of the 404s we will get by just bruteforcing  each location has its only max res (2k 4k etc)
     await downloadSweeps(accessurl, sweepUUIDs)  # sweeps are generally the biggest thing minus a few modles that have massive 3d detail items
     os.chdir(THIS_MODEL_ROOT_DIR)
+    # overlay-layer tiles (furnished/defurnished toggle models) live at assets/overlay/<ol>/~/tiles/<sweep>/...
+    # Their templates + dir-scoped access signatures are in window.MP_PREFETCHED_MODELDATA inside index.html.
+    # Non-overlay models will have no matches here and this becomes a no-op.
+    try:
+        with open("index.html", "r", encoding="UTF-8") as f:
+            overlay_preload = getPreloadJson(f.read())
+        await downloadOverlaySweeps(overlay_preload, sweepUUIDs)
+    except FileNotFoundError:
+        pass
 
 
 # Patch showcase.js to fix expiration issue
@@ -1397,7 +1453,12 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         post_msg = None
         logLevel = logging.INFO
         try:
-            if urlparse(self.path).path == "/api/mp/models/graph":
+            # Showcase 26.4.5+ added /api/mp/accounts/graph (account/auth queries) alongside the
+            # original /api/mp/models/graph. Both speak the same operationName-driven JSON
+            # protocol, so route both paths through do_GraphRequest. Without this the POST 404s
+            # cascade into NetworkError and the viewer shows "model unavailable".
+            graph_path = urlparse(self.path).path
+            if graph_path in ("/api/mp/models/graph", "/api/mp/accounts/graph"):
                 content_len = int(self.headers.get("content-length") or "0")
                 post_body = self.rfile.read(content_len).decode("utf-8")
                 json_body = json.loads(post_body)
