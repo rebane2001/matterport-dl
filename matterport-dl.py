@@ -769,7 +769,11 @@ async def downloadPlugins(pageid):
         pluginJson = json.loads(f.read())
     for plugin in pluginJson:
         plugPath = f"showcase-sdk/plugins/published/{plugin['name']}/{plugin['currentVersion']}/plugin.json"
-        await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
+        try:
+            await downloadFile("PLUGIN", True, f"https://static.{BASE_MATTERPORT_DOMAIN}/{plugPath}", plugPath)
+        except Exception as e:
+            consoleDebugLog(f"Plugin {plugin['name']} v{plugin['currentVersion']} fetch failed (Matterport CDN may have purged this version), skipping: {e}", loglevel=logging.WARNING)
+            continue
 
 
 async def downloadAttachments():
