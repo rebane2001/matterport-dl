@@ -1453,7 +1453,12 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         post_msg = None
         logLevel = logging.INFO
         try:
-            if urlparse(self.path).path == "/api/mp/models/graph":
+            # Showcase 26.4.5+ added /api/mp/accounts/graph (account/auth queries) alongside the
+            # original /api/mp/models/graph. Both speak the same operationName-driven JSON
+            # protocol, so route both paths through do_GraphRequest. Without this the POST 404s
+            # cascade into NetworkError and the viewer shows "model unavailable".
+            graph_path = urlparse(self.path).path
+            if graph_path in ("/api/mp/models/graph", "/api/mp/accounts/graph"):
                 content_len = int(self.headers.get("content-length") or "0")
                 post_body = self.rfile.read(content_len).decode("utf-8")
                 json_body = json.loads(post_body)
