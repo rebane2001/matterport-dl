@@ -328,7 +328,9 @@ async def downloadFile(type, shouldExist, url, file, post_data=None, always_down
 
 
 def validUntilFix(text):
-    return re.sub(r"validUntil\"\s*:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', text)
+    text = re.sub(r"validUntil\"\s*:\s*\"20[\d]{2}-[\d]{2}-[\d]{2}T", 'validUntil":"2099-01-01T', text) # Unescaped JSON
+    text = re.sub(r'\\\"validUntil\\\":\\\"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', '\\"validUntil\\":\\"2099-01-01T00:00:00Z', text) # Escaped JSON
+    return text
 
 
 async def downloadGraphModels(pageid):
