@@ -475,7 +475,45 @@ def extractJSDict(forWhat: str, str: str):
     return ret
 
 
-async def downloadAssets(base, base_page_text):
+def _find_balanced_braces(s: str, start_idx: int) -> tuple[int, int] | None:
+    """Return (start, end_exclusive) of the first balanced {...} block starting at/after start_idx."""
+    open_idx = s.find("{", start_idx)
+    if open_idx == -1:
+        return None
+    depth = 0
+    for i in range(open_idx, len(s)):
+        ch = s[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return (open_idx, i + 1)
+    return None
+
+
+def _safe_extract_js_dict(forWhat: str, s: str) -> dict[str, str]:
+    """
+    Extract a flat JS object literal dict (numeric keys) from a larger string.
+    Returns {} if none found.
+    """
+    rng = _find_balanced_braces(s, 0)
+    if rng is None:
+        return {}
+    return extractJSDict(forWhat, s[rng[0] : rng[1]])
+
+
+def _discover_chunk_ids_from_js_text(text: str) -> set[str]:
+    """
+    Discover numeric webpack chunk ids referenced by JS bundles.
+    We look for patterns like `.e(5637)` (async chunk load).
+    """
+    # Keep it simple and resilient: find all `.e(<digits>)`.
+    # Chunk ids are ints but store as strings to match other dict keys.
+    return set(re.findall(r"\.e\(\s*(\d+)\s*\)", text))
+
+
+async def downloadAssets(base, base_page_text, only_js: bool = False):
     global PROGRESS, BASE_MATTERPORT_DOMAIN, MAIN_SHOWCASE_FILENAME
 
     language_codes = ["af", "sq", "ar-SA", "ar-IQ", "ar-EG", "ar-LY", "ar-DZ", "ar-MA", "ar-TN", "ar-OM", "ar-YE", "ar-SY", "ar-JO", "ar-LB", "ar-KW", "ar-AE", "ar-BH", "ar-QA", "eu", "bg", "be", "ca", "zh-TW", "zh-CN", "zh-HK", "zh-SG", "hr", "cs", "da", "nl", "nl-BE", "en", "en-US", "en-EG", "en-AU", "en-GB", "en-CA", "en-NZ", "en-IE", "en-ZA", "en-JM", "en-BZ", "en-TT", "et", "fo", "fa", "fi", "fr", "fr-BE", "fr-CA", "fr-CH", "fr-LU", "gd", "gd-IE", "de", "de-CH", "de-AT", "de-LU", "de-LI", "el", "he", "hi", "hu", "is", "id", "it", "it-CH", "ja", "ko", "lv", "lt", "mk", "mt", "no", "pl", "pt-BR", "pt", "rm", "ro", "ro-MO", "ru", "ru-MI", "sz", "sr", "sk", "sl", "sb", "es", "es-AR", "es-GT", "es-CR", "es-PA", "es-DO", "es-MX", "es-VE", "es-CO", "es-PE", "es-EC", "es-CL", "es-UY", "es-PY", "es-BO", "es-SV", "es-HN", "es-NI", "es-PR", "sx", "sv", "sv-FI", "th", "ts", "tn", "tr", "uk", "ur", "ve", "vi", "xh", "ji", "zu"]
@@ -536,7 +574,8 @@ async def downloadAssets(base, base_page_text):
         raise Exception("In all js files found on the page could not find any that have showcase and runtime in the filename for the showcase runtime js file")
     if react_vendor_filename is None:
         raise Exception("In all js files found on the page could not find any that have vendors-react in the filename for the react vendor js file")
-    await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
+    if not only_js:
+        await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
 
     # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
@@ -558,61 +597,95 @@ async def downloadAssets(base, base_page_text):
     #     9114: "core"
     # } [e] || e) + ".css"
 
-    match = re.search(
-        r"""
-                "js/"\+ # find js/+  (literal plus)
-                (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
-                (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
-                css #stopping when we see the css
-                (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
-                .+? #skip the minimum amount to get to next part
-                miniCss=.+? #find miniCss= then skip minimum to first &&
-                &&
-                (?P<CSSFileToKey>.+?) #capture minimum until we get to next &&
-                &&
-              """,
-        showcase_cont,
-        re.X,
-    )
-    if match is None:
-        raise Exception("Unable to extract js files and css files from showcase runtime js file")
-    groupDict = match.groupdict()
-    jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"])
-    jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"])
-    cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles", groupDict["namedCSSFiles"])
-    cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"])
+    # Newer Matterport bundles changed minification patterns. Instead of relying on a brittle regex,
+    # scan for the object-literal maps used to construct chunk filenames.
+    #
+    # Typical shape (prettified):
+    #   ... "js/"+({239:"three"}[e]||e)+"."+{172:"hash"}[e]+".js", ... miniCssF=e=>"css/"+({7475:"late"}[e]||e)+".css"
+    jsNamedDict: dict[str, str] = {}
+    jsKeyDict: dict[str, str] = {}
+    cssNamedDict: dict[str, str] = {}
+    cssKeyDict: dict[str, str] = {}
 
-    for number, key in jsKeyDict.items():
-        name = number
-        if name in jsNamedDict:
-            name = jsNamedDict[name]
-        file = f"js/{name}.{key}.js"
-        typeDict[file] = "SHOWCASE_DISCOVERED_JS"
-        assets.append(file)
+    js_anchor = showcase_cont.find('"js/"')
+    mini_css_anchor = showcase_cont.find("miniCssF", js_anchor if js_anchor != -1 else 0)
+    if js_anchor != -1 and mini_css_anchor != -1 and mini_css_anchor > js_anchor:
+        js_segment = showcase_cont[js_anchor:mini_css_anchor]
+        first = _find_balanced_braces(js_segment, 0)
+        if first is not None:
+            jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", js_segment[first[0] : first[1]])
+            second = _find_balanced_braces(js_segment, first[1])
+            if second is not None:
+                jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", js_segment[second[0] : second[1]])
 
-    for number, key in cssKeyDict.items():
-        name = number
-        if name in cssNamedDict:
-            name = cssNamedDict[name]
-        file = f"css/{name}.css"  # key is not used for css its just 1 always
-        typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
-        assets.append(file)
+    # CSS segment is built by miniCssF. In current bundles we generally only need the names (keys),
+    # as the downstream code does not use the hash value for CSS filenames.
+    if mini_css_anchor != -1:
+        css_segment = showcase_cont[mini_css_anchor : mini_css_anchor + 25000]  # enough to include miniCssF body
+        cssNamedDict = _safe_extract_js_dict("showcase-runtime.js: namedCSSFiles", css_segment)
+        if cssNamedDict:
+            cssKeyDict = {k: "1" for k in cssNamedDict.keys()}
 
-    for image in image_files:
-        if not image.endswith(".jpg") and not image.endswith(".svg"):
-            image = image + ".png"
-        file = "images/" + image
-        typeDict[file] = "STATIC_IMAGE"
-        assets.append(file)
+    if not jsNamedDict and not jsKeyDict:
+        # Keep the old error behavior but include more context for debugging.
+        snippet = showcase_cont[js_anchor : js_anchor + 300] if js_anchor != -1 else showcase_cont[:300]
+        raise Exception(f"Unable to extract JS chunk maps from showcase runtime js file. Snippet: {snippet}")
 
-    for f in font_files:
-        for file in ["fonts/" + f + ".woff", "fonts/" + f + ".woff2"]:
-            typeDict[file] = "STATIC_FONT"
+    if jsKeyDict:
+        # Older/hashed bundle format: js/<name>.<hash>.js
+        for number, key in jsKeyDict.items():
+            name = number
+            if name in jsNamedDict:
+                name = jsNamedDict[name]
+            file = f"js/{name}.{key}.js"
+            typeDict[file] = "SHOWCASE_DISCOVERED_JS"
             assets.append(file)
-    for lc in language_codes:
-        file = "locale/messages/strings_" + lc + ".json"
-        typeDict[file] = "STATIC_LOCAL_STRINGS"
-        assets.append(file)
+    else:
+        # Newer/no-hash bundle format: js/<name>.js (chunk filename has no hash map).
+        for number, name in jsNamedDict.items():
+            file = f"js/{name}.js"
+            typeDict[file] = "SHOWCASE_DISCOVERED_JS"
+            assets.append(file)
+            # Also include numeric chunk filename fallback if runtime might use id directly.
+            file2 = f"js/{number}.js"
+            typeDict[file2] = "SHOWCASE_DISCOVERED_JS"
+            assets.append(file2)
+
+    # CSS: downstream format is css/<name>.css (hash not used).
+    if cssKeyDict:
+        for number, key in cssKeyDict.items():
+            name = number
+            if name in cssNamedDict:
+                name = cssNamedDict[name]
+            file = f"css/{name}.css"
+            typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
+            assets.append(file)
+    else:
+        for number, name in cssNamedDict.items():
+            file = f"css/{name}.css"
+            typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
+            assets.append(file)
+
+    if not only_js:
+        for image in image_files:
+            if not image.endswith(".jpg") and not image.endswith(".svg"):
+                image = image + ".png"
+            file = "images/" + image
+            typeDict[file] = "STATIC_IMAGE"
+            assets.append(file)
+
+        for f in font_files:
+            for file in ["fonts/" + f + ".woff", "fonts/" + f + ".woff2"]:
+                typeDict[file] = "STATIC_FONT"
+                assets.append(file)
+        for lc in language_codes:
+            file = "locale/messages/strings_" + lc + ".json"
+            typeDict[file] = "STATIC_LOCAL_STRINGS"
+            assets.append(file)
+
+    # When only_js is requested, only download JS assets (plus numeric chunks discovered later).
+    if only_js:
+        assets = [a for a in assets if a.startswith("js/") and a.endswith(".js")]
 
     toDownload: list[AsyncDownloadItem] = []
     for asset in assets:
@@ -623,6 +696,39 @@ async def downloadAssets(base, base_page_text):
         shouldExist = True
         toDownload.append(AsyncDownloadItem(type, shouldExist, f"{base}{asset}", local_file))
     await AsyncArrayDownload(toDownload)
+
+    # Some newer bundles will request numeric chunk files like /js/5637.js.
+    # The runtime falls back to `e + ".js"` when a chunk id is not in the named map.
+    # To avoid local-server 404s, scan the downloaded JS bundles for `.e(<id>)`
+    # and download any missing numeric chunks.
+    try:
+        numeric_chunk_ids: set[str] = set()
+        js_dir = pathlib.Path("js")
+        if js_dir.exists():
+            # Only scan top-level JS bundles (avoid huge recursion).
+            for p in js_dir.glob("*.js"):
+                try:
+                    with p.open("r", encoding="utf-8", errors="ignore") as f:
+                        numeric_chunk_ids |= _discover_chunk_ids_from_js_text(f.read())
+                except Exception:
+                    pass
+
+        # Don’t re-download the ones that are already provided as named chunks.
+        for known in jsNamedDict.keys():
+            numeric_chunk_ids.discard(known)
+
+        numeric_to_download: list[AsyncDownloadItem] = []
+        for chunk_id in sorted(numeric_chunk_ids):
+            local_path = f"js/{chunk_id}.js"
+            if os.path.exists(local_path):
+                continue
+            numeric_to_download.append(AsyncDownloadItem("SHOWCASE_DISCOVERED_JS_NUMERIC", False, f"{base}{local_path}", local_path))
+
+        if numeric_to_download:
+            await AsyncArrayDownload(numeric_to_download)
+    except Exception:
+        # Best-effort only; download can still succeed without these.
+        pass
     if react_vendor_filename and os.path.exists(react_vendor_filename):
         reactCont = ""
         with open(react_vendor_filename, "r", encoding="UTF-8") as f:
@@ -893,6 +999,14 @@ async def downloadCapture(pageid):
 
     KeyHandler.SaveKeysFromText("MainBasePage", base_page_text)
     staticbase = re.search(rf'<base href="(https://static.{BASE_MATTERPORT_DOMAIN}/.*?)">', base_page_text).group(1)  # type: ignore - may be None
+
+    # Fast path: download only the JS files needed for the local viewer.
+    if CLA.getCommandLineArg(CommandLineArg.JS_ONLY):
+        consoleLog("Downloading static JS files only (no other assets)...")
+        await downloadAssets(staticbase, base_page_text, only_js=True)
+        PROGRESS.ClearRelative()
+        consoleLog(f"Done (JS only), {PROGRESS}!")
+        return
 
     base_page_deunicode = base_page_text.encode("utf-8", errors="ignore").decode("unicode-escape")  # some non-english matterport pages have unicode escapes for even the generic url chars
     if CLA.getCommandLineArg(CommandLineArg.DEBUG):
@@ -1619,7 +1733,7 @@ class KeyHandler:
         return url.replace(match.group(0), key_val)
 
 
-CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "QUIET", "HELP", "ADV_HELP", "AUTO_SERVE", "FIND_URL_KEY", "FIND_URL_KEY_AND_DOWNLOAD", "REFRESH_KEY_FILES", "GENERATE_TILE_MESH_CROPS", "TITLE"])
+CommandLineArg = Enum("CommandLineArg", ["ADVANCED_DOWNLOAD", "PROXY", "VERIFY_SSL", "DEBUG", "CONSOLE_LOG", "TILDE", "BASE_FOLDER", "ALIAS", "DOWNLOAD", "MAIN_ASSET_DOWNLOAD", "MANUAL_HOST_REPLACEMENT", "ALWAYS_DOWNLOAD_GRAPH_REQS", "QUIET", "HELP", "ADV_HELP", "AUTO_SERVE", "FIND_URL_KEY", "FIND_URL_KEY_AND_DOWNLOAD", "REFRESH_KEY_FILES", "GENERATE_TILE_MESH_CROPS", "TITLE", "JS_ONLY"])
 ArgAppliesTo = Enum("ArgAppliesTo", ["DOWNLOAD", "SERVING", "BOTH"])
 
 
@@ -1754,6 +1868,7 @@ def main():
     CLA.addCommandLineArg(CommandLineArg.FIND_URL_KEY_AND_DOWNLOAD, "Like FIND_URL_KEY but saves a copy to the debug folder of the item", "", "https://my.matterport.com/api/player/models/EGxFGTFyC9N/test.file", hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.REFRESH_KEY_FILES, "There are about a half dozen files always downloaded as they may contain access keys we need, this prevents these from downloading", True, hidden=True, allow_saved=False)
     CLA.addCommandLineArg(CommandLineArg.GENERATE_TILE_MESH_CROPS, "Certain views like dollhouse require cropped versions of certain textures, this uses python to generate all those", True, hidden=False, allow_saved=True)
+    CLA.addCommandLineArg(CommandLineArg.JS_ONLY, "Only download showcase JS (static js + numeric chunks). Skips model assets/plugins/images/etc.", False, hidden=False, allow_saved=False, applies_to=ArgAppliesTo.DOWNLOAD)
 
     CLA.addCommandLineArg(CommandLineArg.MANUAL_HOST_REPLACEMENT, "Use old style replacement of matterport URLs rather than the JS proxy, this likely only works if hosted on port 8080 after", False, hidden=True)
 
