@@ -456,23 +456,36 @@ def _logUrlDownload(logLevel, logPrefix, type, localTarget, url, additionalParam
     logging.log(logLevel, f"{logPrefix} REQ for {type} {requestID}: should exist: {shouldExist} {optionalResult} File: {localTarget} at url: {url} {key_type} {additionalParams}")
 
 
-def extractJSDict(forWhat: str, str: str):
-    ret: dict[str, str] = {}
-    # Expects a string where the first { starts the dict and last } ends it.
-    startPos = str.find("{")
-    if startPos == -1:
-        raise Exception(f"Unable to extract JS dictionary for: {forWhat} from the JS string: {str} can't find first {{")
-    endPos = str.rfind("}")
-    if endPos == -1:
-        raise Exception(f"Unable to extract JS dictionary for: {forWhat} from the JS string: {str} can't find last }}")
-    str = str[startPos + 1 : endPos]
-    pairs = str.split(",")
-    for kvp in pairs:
-        arr = kvp.replace('"', "").split(":")
-        key = arr[0]
-        key = int(float(key))  # keys can be in scientific notation
-        ret[f"{key}"] = arr[1]
-    return ret
+def extractBraceBlock(text, start_marker):
+    # Finds start_marker in text, then returns the full {...} object literal that follows it
+    # (brace-depth matched, so nested braces in values don't cut it short). Returns None if
+    # the marker or a balanced brace block can't be found.
+    idx = text.find(start_marker)
+    if idx == -1:
+        return None
+    brace_start = text.find("{", idx)
+    if brace_start == -1:
+        return None
+    depth = 0
+    for i in range(brace_start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[brace_start : i + 1]
+    return None
+
+
+def extractJSDict(forWhat, js_string):
+    """
+    Parses a JS object literal of the form {123:"name",456:"other",...} (bare numeric
+    keys, quoted string values) as used by Matterport's webpack chunk filename maps,
+    e.g. l.u=e=>"js/"+({123:"name"}[e]||e)+".js"
+    """
+    if not js_string:
+        return {}
+    return {m.group(1): m.group(2) for m in re.finditer(r'(\d+)\s*:\s*"([^"]*)"', js_string)}
 
 
 async def downloadAssets(base, base_page_text):
@@ -539,62 +552,29 @@ async def downloadAssets(base, base_page_text):
     await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
 
-    # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
-    # js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
-    # here is how the JS is prettied up (aka with spaces).  First are JS files with specific names, second are the js files to key, and finally are the css files.   The js files with specific names you still need the key for just instead of [number].[key].js it is [name].[key].js
-    # , d.u = e => "js/" + ({
-    #     239: "three-examples",
-    #     777: "split",
-    #     1662: "sdk-bundle",
-    #     9114: "core",
-    #     9553: "control-kit"
-    # } [e] || e) + "." + {
-    #     172: "6c50ed8e5ff7620de75b",
-    #     9553: "8aa28bbfc8f4948fd4d1",
-    #     9589: "dc4901b493f7634edbcf",
-    #     9860: "976dc6caac98abda24c9"
-    # } [e] + ".js", d.miniCssF = e => "css/" + ({
-    #     7475: "late",
-    #     9114: "core"
-    # } [e] || e) + ".css"
+    # Matterport's webpack chunk loader no longer suffixes chunk filenames with a content
+    # hash (older builds served js/<name>.<hash>.js; current builds just serve js/<name>.js,
+    # or js/<id>.js for chunks with no friendly name). The runtime file exposes a name map
+    # for both js and css chunks, e.g.:
+    #   l.u = e => "js/" + ({239: "three-examples", 9553: "control-kit", ...}[e] || e) + ".js"
+    #   l.miniCssF = e => "css/" + ({7475: "late", 9114: "core", ...}[e] || e) + ".css"
+    # Only chunks that have a friendly name appear in these maps; the many numeric-only
+    # chunks referenced elsewhere (as i.e(1470) calls) are discovered later below, once we
+    # have the actual bundle files on disk to scan.
+    jsBlock = extractBraceBlock(showcase_cont, '"js/"+')
+    cssBlock = extractBraceBlock(showcase_cont, '"css/"+')
+    if jsBlock is None or cssBlock is None:
+        raise Exception("Unable to extract js/css chunk filename maps from showcase runtime js file")
+    jsNamedDict = extractJSDict("showcase-runtime.js: named js chunks", jsBlock)
+    cssNamedDict = extractJSDict("showcase-runtime.js: named css chunks", cssBlock)
 
-    match = re.search(
-        r"""
-                "js/"\+ # find js/+  (literal plus)
-                (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
-                (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
-                css #stopping when we see the css
-                (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
-                .+? #skip the minimum amount to get to next part
-                miniCss=.+? #find miniCss= then skip minimum to first &&
-                &&
-                (?P<CSSFileToKey>.+?) #capture minimum until we get to next &&
-                &&
-              """,
-        showcase_cont,
-        re.X,
-    )
-    if match is None:
-        raise Exception("Unable to extract js files and css files from showcase runtime js file")
-    groupDict = match.groupdict()
-    jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"])
-    jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"])
-    cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles", groupDict["namedCSSFiles"])
-    cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"])
-
-    for number, key in jsKeyDict.items():
-        name = number
-        if name in jsNamedDict:
-            name = jsNamedDict[name]
-        file = f"js/{name}.{key}.js"
+    for number, name in jsNamedDict.items():
+        file = f"js/{name}.js"
         typeDict[file] = "SHOWCASE_DISCOVERED_JS"
         assets.append(file)
 
-    for number, key in cssKeyDict.items():
-        name = number
-        if name in cssNamedDict:
-            name = cssNamedDict[name]
-        file = f"css/{name}.css"  # key is not used for css its just 1 always
+    for number, name in cssNamedDict.items():
+        file = f"css/{name}.css"
         typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
         assets.append(file)
 
@@ -623,6 +603,57 @@ async def downloadAssets(base, base_page_text):
         shouldExist = True
         toDownload.append(AsyncDownloadItem(type, shouldExist, f"{base}{asset}", local_file))
     await AsyncArrayDownload(toDownload)
+
+    # The named js/css maps above only cover chunks with a friendly name. Most chunks are
+    # referenced only by numeric id, either directly via calls like i.e(1470), or indirectly
+    # through webpack "require.context" maps used for lazy-loaded per-locale resources, e.g.
+    # showcase.js contains {"./cwf_en-US.yaml":[42622,2622], ...} where the second number of
+    # each pair is the chunk id (these are not optional: showcase.js's init path loads the
+    # current locale's entry from a map like this, so a missing one blanks the whole viewer).
+    # Scan every JS bundle on disk for both patterns, download whatever's missing, then rescan
+    # the newly downloaded chunks too since they can reference further chunks of their own
+    # (e.g. init.js has its own logo/locale context map). Bounded to a few rounds so this
+    # can't loop forever if chunks end up referencing each other.
+    # scannedFiles avoids re-scanning a bundle we've already read on a later round - only
+    # newly-downloaded chunks need to be scanned again each time round the loop.
+    scannedFiles: set[str] = set()
+    # 5 rounds is a heuristic, not a derived bound: in testing, newly-discovered chunks (e.g.
+    # init.js) only ever added one further round's worth of their own chunk references before
+    # settling, so this comfortably covers that with room to spare. The `if not chunkDownload:
+    # break` below is what actually ends the loop in the normal case; this cap only exists so a
+    # future build that references chunks in a cycle can't turn this into an infinite loop.
+    for _ in range(5):
+        discoveredChunkIds: set[str] = set()
+        for asset in assets:
+            local_file = asset.split("?")[0]
+            if local_file.endswith(".js") and local_file not in scannedFiles and os.path.exists(local_file):
+                scannedFiles.add(local_file)
+                with open(local_file, "r", encoding="UTF-8", errors="ignore") as f:
+                    text = f.read()
+                discoveredChunkIds.update(re.findall(r"\.e\((\d+)\)", text))
+                discoveredChunkIds.update(m.group(1) for m in re.finditer(r'"\./[^"]+"\s*:\s*\[\s*\d+\s*,\s*(\d+)\s*\]', text))
+
+        chunkDownload: list[AsyncDownloadItem] = []
+        for chunkId in discoveredChunkIds:
+            jsFile = f"js/{jsNamedDict.get(chunkId, chunkId)}.js"
+            if jsFile not in typeDict:
+                typeDict[jsFile] = "SHOWCASE_DISCOVERED_CHUNK_JS"
+                assets.append(jsFile)
+                chunkDownload.append(AsyncDownloadItem("SHOWCASE_DISCOVERED_CHUNK_JS", False, f"{base}{jsFile}", jsFile))
+            # Most chunk ids don't have a css counterpart, and we have no cheap way to know
+            # which ones do ahead of time (that mapping isn't exposed anywhere we can parse
+            # like the named js/css maps above are). shouldExist=False here means a 404 for
+            # the ones that don't is expected and silent, matching the existing convention
+            # used elsewhere in this file for speculative/best-effort downloads.
+            cssFile = f"css/{cssNamedDict.get(chunkId, chunkId)}.css"
+            if cssFile not in typeDict:
+                typeDict[cssFile] = "SHOWCASE_DISCOVERED_CHUNK_CSS"
+                assets.append(cssFile)
+                chunkDownload.append(AsyncDownloadItem("SHOWCASE_DISCOVERED_CHUNK_CSS", False, f"{base}{cssFile}", cssFile))
+        if not chunkDownload:  # nothing new discovered this round - normal loop exit
+            break
+        await AsyncArrayDownload(chunkDownload)
+
     if react_vendor_filename and os.path.exists(react_vendor_filename):
         reactCont = ""
         with open(react_vendor_filename, "r", encoding="UTF-8") as f:
@@ -1375,23 +1406,20 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         return False
 
     def do_GraphRequest(self, option_name: str):
-        post_msg = None
-        logLevel = logging.INFO
-        if option_name in GRAPH_DATA_REQ:
-            self.send_response(200)
-            self.end_headers()
-            file_path = f"api/mp/models/graph_{option_name}.json"
-            if os.path.exists(file_path):
-                with open(file_path, "r", encoding="UTF-8") as f:
-                    self.wfile.write(f.read().encode("utf-8"))
-                    post_msg = f"graph of operationName: {option_name} we are handling internally"
-            else:
-                logLevel = logging.WARNING
-                post_msg = f"graph for operationName: {option_name} we don't know how to handle, but likely could add support, returning empty instead. If you get an error this may be why (include this message in bug report)."
-                self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
-
-        if post_msg is not None:
-            consoleDebugLog(f"Handling a graph request on {self.path}: {post_msg}", loglevel=logLevel)
+        # Always respond, even for an operationName we don't recognize at all (e.g. one added
+        # to Matterport's live app since this tool was last updated for it) - previously an
+        # unrecognized operationName fell through this function with no response sent at all,
+        # which the browser saw as a hung/empty connection rather than a clean, recoverable error.
+        self.send_response(200)
+        self.end_headers()
+        file_path = f"api/mp/models/graph_{option_name}.json" if option_name in GRAPH_DATA_REQ else None
+        if file_path and os.path.exists(file_path):
+            with open(file_path, "r", encoding="UTF-8") as f:
+                self.wfile.write(f.read().encode("utf-8"))
+            consoleDebugLog(f"Handling a graph request on {self.path}: graph of operationName: {option_name} we are handling internally", loglevel=logging.INFO)
+        else:
+            self.wfile.write(bytes('{"data": "empty"}', "utf-8"))
+            consoleDebugLog(f"Handling a graph request on {self.path}: graph for operationName: {option_name} we don't know how to handle (not recognized, or recognized but not cached on disk), returning empty instead. If you get an error this may be why (include this message in bug report).", loglevel=logging.WARNING)
 
     def do_POST(self):
         post_msg = None
@@ -1423,9 +1451,17 @@ class OurSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
 GRAPH_DATA_REQ = {
     "GetModelDetails": "?operationName=GetModelDetails&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22012c3d36cdf890ba8e49dfd66b1072a2dbb573e672d72482eff86a2563530f46%22%7D%7D",
+    # Added since the live viewer now queries this on load and needs real (not empty) data to
+    # finish loading - was previously entirely unhandled (see do_GraphRequest's unknown-operation
+    # fallback), observed from a live request's own persistedQuery hash.
+    "GetModelAssets": "?operationName=GetModelAssets&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2288fcfb6cb48b4c99c53623b3d939da42da1a700014fe1e926ba6f14f49b777c2%22%7D%7D",
     "GetModelViewPrefetch": "?operationName=GetModelViewPrefetch&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%2C%22includeDisabled%22%3Afalse%2C%22includeLayers%22%3Atrue%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22ed65e7307756d949f0e7cdab0cf79ee0b0797cc9c494d8811a2bb3025cd7bce6%22%7D%7D",
     "GetRoomBounds": "?operationName=GetRoomBounds&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2214f99a0c44512f435987f1305eacdaea7ca600f2b5e9022499087188e63915aa%22%7D%7D",
     "GetShowcaseSweeps": "?operationName=GetShowcaseSweeps&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%220faff869a8ae9385fe262d18ea1f731bbbeb3d618c036e60a8d0d630ae3526a5%22%7D%7D",
+    # Added: distinct from GetShowcaseSweeps above - the live viewer now also calls this one
+    # (repeatedly, since walk mode can't get real sweep-location data without it) when
+    # transitioning into walk/panorama mode. Was previously entirely unhandled.
+    "GetSweeps": "?operationName=GetSweeps&variables=%7B%22sweepIds%22%3Anull%2C%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%2C%22sweepTags%22%3A%5B%22showcase%22%5D%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22f7f1c9ec3e99b6579e76291da523de689c07d5e2c421f4ab82cf826b19af2427%22%7D%7D",
     "GetSnapshots": "?operationName=GetSnapshots&variables=%7B%22modelId%22%3A%22[MATTERPORT_MODEL_ID]%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22510bd772b16a48aa4ea74aa290373225eeb306b3162fa34c75d6f643daf3f22b%22%7D%7D",
     # the following normally only seen on defurnished views directly
     "GetRoomClassifications": "?operationName=GetRoomClassifications&variables=%7B%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22fdfefe83b3f6c491b0b76576b34366278274c92b36324bef4dd299d39fb986f3%22%7D%7D",  # yes get room classificaitons does not take a model id
@@ -1476,7 +1512,7 @@ def RegisterWindowsBrowsers():
 
 def startServer(baseDir, pageId, browserLaunch, bindAddress, bindPort):
     global SERVED_BASE_URL
-    twinDir = getPageId(pageId)
+    twinDir = pageId  # pageId is already resolved/validated by the caller (raw id, or an existing download folder/rename alias)
     if not os.path.exists(twinDir):
         fullPath = os.path.abspath(twinDir)
         relativeToScriptDir = os.path.join(BASE_MATTERPORTDL_DIR, baseDir, twinDir)
@@ -1793,7 +1829,10 @@ def main():
         # Check if pageIdOrIp is an IP address
         ip_pattern = re.compile(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$")
         if not ip_pattern.match(pageIdOrIp):
-            pageId = getPageId(pageIdOrIp)
+            if os.path.exists(os.path.join(baseDir, pageIdOrIp)):
+                pageId = pageIdOrIp  # an existing download folder or rename alias - skip raw id/url validation
+            else:
+                pageId = getPageId(pageIdOrIp)
             argPos += 1
             if len(sys.argv) == argPos:  # if no more args its a download run
                 isDownloadRun = True
