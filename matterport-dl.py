@@ -539,37 +539,29 @@ async def downloadAssets(base, base_page_text):
     await downloadFile("STATIC_ASSET", True, "https://matterport.com/nextjs-assets/images/favicon.ico", "favicon.ico")  # mainly to avoid the 404, always matterport.com
     showcase_cont = await downloadFileAndGetText(typeDict[showcase_runtime_filename], True, base + showcase_runtime_filename, showcase_runtime_filename, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
 
-    # lets try to extract the js files it might be loading and make sure we know them, the code has things like .e(858)  ot load which are the numbers we care about
-    # js_extracted = re.findall(r"\.e\(([0-9]{2,3})\)", showcase_cont)
-    # here is how the JS is prettied up (aka with spaces).  First are JS files with specific names, second are the js files to key, and finally are the css files.   The js files with specific names you still need the key for just instead of [number].[key].js it is [name].[key].js
-    # , d.u = e => "js/" + ({
-    #     239: "three-examples",
-    #     777: "split",
-    #     1662: "sdk-bundle",
-    #     9114: "core",
-    #     9553: "control-kit"
-    # } [e] || e) + "." + {
-    #     172: "6c50ed8e5ff7620de75b",
-    #     9553: "8aa28bbfc8f4948fd4d1",
-    #     9589: "dc4901b493f7634edbcf",
-    #     9860: "976dc6caac98abda24c9"
-    # } [e] + ".js", d.miniCssF = e => "css/" + ({
-    #     7475: "late",
-    #     9114: "core"
-    # } [e] || e) + ".css"
-
+    # Matterport's webpack runtime builds the chunk URLs. As of showcase 26.x the chunk
+    # filenames no longer carry a content hash, so there's no {id: hash} map to extract
+    # (the old JSFileToKey/CSSFileToKey regex groups below just don't exist anymore). The
+    # URL-building code now looks like:
+    #
+    #   l.u = e => "js/" + ({239:"three-examples",777:"split",...,9553:"control-kit"}[e]||e) + ".js",
+    #   l.miniCssF = e => "css/" + ({5385:"init",7475:"late",...,9114:"core"}[e]||e) + ".css"
+    #
+    # i.e. a chunk's filename is just `namedDict[id] || id` (no hash, no key). The named
+    # dict only covers chunks with a friendly name -- not a full enumeration. The full set
+    # of JS chunk ids has to be discovered by scanning JS for webpack's chunk-load calls
+    # (`.e(NUMBER)`) and lazy-import module maps, transitively (a chunk can reference further
+    # chunks). The full set of CSS chunk ids comes from the separate miniCss "has css" guard
+    # map, since not every JS chunk has a matching CSS chunk.
     match = re.search(
         r"""
-                "js/"\+ # find js/+  (literal plus)
-                (?P<namedJSFiles>[^\[]+) #capture everything until the first [ character store in group namedJSFiles
-                (?P<JSFileToKey>.+?) #least greedy capture, so capture the minimum amount to make this regex still true
-                css #stopping when we see the css
-                (?P<namedCSSFiles>[^\[]+) #similar to before capture to first [
-                .+? #skip the minimum amount to get to next part
-                miniCss=.+? #find miniCss= then skip minimum to first &&
-                &&
-                (?P<CSSFileToKey>.+?) #capture minimum until we get to next &&
-                &&
+                "js/"\+\( # find js/+(  (literal plus then open paren)
+                (?P<namedJSFiles>\{[^}]*\}) # the named js dict {id:"name",...}
+                \[e\]\|\|e\)\+"\.js" # the [e]||e)+".js" tail confirms we matched the right spot
+                .+? # skip minimum to the css url builder
+                "css/"\+\(
+                (?P<namedCSSFiles>\{[^}]*\}) # the named css dict
+                \[e\]\|\|e\)\+"\.css"
               """,
         showcase_cont,
         re.X,
@@ -578,25 +570,69 @@ async def downloadAssets(base, base_page_text):
         raise Exception("Unable to extract js files and css files from showcase runtime js file")
     groupDict = match.groupdict()
     jsNamedDict = extractJSDict("showcase-runtime.js: namedJSFiles", groupDict["namedJSFiles"])
-    jsKeyDict = extractJSDict("showcase-runtime.js: JSFileToKey", groupDict["JSFileToKey"])
     cssNamedDict = extractJSDict("showcase-runtime.js: namedCSSFiles", groupDict["namedCSSFiles"])
-    cssKeyDict = extractJSDict("showcase-runtime.js: CSSFileToKey", groupDict["CSSFileToKey"])
 
-    for number, key in jsKeyDict.items():
-        name = number
-        if name in jsNamedDict:
-            name = jsNamedDict[name]
-        file = f"js/{name}.{key}.js"
-        typeDict[file] = "SHOWCASE_DISCOVERED_JS"
-        assets.append(file)
+    cssGuardMatch = re.search(r"miniCss=.+?&&(?P<cssGuard>\{[0-9:,]*\})\[", showcase_cont)
+    if cssGuardMatch is None:
+        raise Exception("Unable to extract the miniCss css-chunk guard map from showcase runtime js file")
+    cssGuardDict = extractJSDict("showcase-runtime.js: cssGuard", cssGuardMatch.group("cssGuard"))
 
-    for number, key in cssKeyDict.items():
-        name = number
-        if name in cssNamedDict:
-            name = cssNamedDict[name]
-        file = f"css/{name}.css"  # key is not used for css its just 1 always
+    def jsChunkFile(chunkId: str) -> str:
+        return f"js/{jsNamedDict.get(chunkId, chunkId)}.js"
+
+    # Two webpack patterns reference chunk ids:
+    #   1. `.e(NUMBER)` -- statically-known chunks (the chunk-ensure call).
+    #   2. `"./some/module":[moduleId,chunkId]` -- lazy import() module maps (locale files,
+    #      logo svgs, etc), where the second array element is the chunk id. These aren't
+    #      reachable via .e() in the source we see, so pattern 1 alone misses them.
+    chunkRefRe = re.compile(r"\.e\(([0-9]{2,6})\)")
+    lazyChunkRe = re.compile(r'"\./[^"]+":\[[0-9]+,([0-9]{2,6})\]')
+
+    def chunkIdsIn(text: str) -> set:
+        return set(chunkRefRe.findall(text)) | set(lazyChunkRe.findall(text))
+
+    discoveredChunkIds = set(jsNamedDict.keys()) | chunkIdsIn(showcase_cont)
+
+    # Scan every JS file discovered so far for further chunk references -- a chunk can
+    # itself reference more chunks (e.g. init.js lazily importing logo svg chunks) -- so
+    # each discovered chunk file must be scanned too, not just downloaded.
+    scannedFiles = set()
+    pendingScan = [asset for asset in assets if asset.endswith(".js")]
+    pendingScan += [jsChunkFile(cid) for cid in discoveredChunkIds]
+    while pendingScan:
+        jsFile = pendingScan.pop()
+        if jsFile in scannedFiles:
+            continue
+        scannedFiles.add(jsFile)
+        jsType = typeDict.get(jsFile, "SHOWCASE_DISCOVERED_JS")
+        try:
+            cont = await downloadFileAndGetText(jsType, False, base + jsFile, jsFile, always_download=CLA.getCommandLineArg(CommandLineArg.REFRESH_KEY_FILES))
+        except Exception:
+            cont = ""  # chunk ids are discovered heuristically; some are conditional and legitimately 403/404 for this build
+        if not cont:
+            continue
+        for chunkId in chunkIdsIn(cont):
+            if chunkId in discoveredChunkIds:
+                continue
+            discoveredChunkIds.add(chunkId)
+            newFile = jsChunkFile(chunkId)
+            typeDict.setdefault(newFile, "SHOWCASE_DISCOVERED_JS")
+            pendingScan.append(newFile)
+
+    for chunkId in discoveredChunkIds:
+        file = jsChunkFile(chunkId)
+        typeDict.setdefault(file, "SHOWCASE_DISCOVERED_JS")
+        if file not in assets:
+            assets.append(file)
+
+    # css filename uses the friendly name when there is one, else the numeric chunk id --
+    # same rule as js, applied over every id in the miniCss guard map.
+    for chunkId in cssGuardDict:
+        name = cssNamedDict.get(chunkId, chunkId)
+        file = f"css/{name}.css"
         typeDict[file] = "SHOWCASE_DISCOVERED_CSS"
-        assets.append(file)
+        if file not in assets:
+            assets.append(file)
 
     for image in image_files:
         if not image.endswith(".jpg") and not image.endswith(".svg"):

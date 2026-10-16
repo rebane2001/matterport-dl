@@ -2,3 +2,5 @@
 downloads/
 output/
 defaults.json
+venv/
+__pycache__/
